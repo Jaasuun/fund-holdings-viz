@@ -66,6 +66,8 @@ def build_tech_gap(
 
     both = subset.dropna(subset=["实际累计", "推算累计"]).copy()
     both["差距"] = both["实际累计"] - both["推算累计"]
+    daily_gap = subset.dropna(subset=["实际涨幅", "推算涨幅"]).copy()
+    daily_gap["差额"] = daily_gap["实际涨幅"] - daily_gap["推算涨幅"]
 
     path = pd.DataFrame()
     if not both.empty:
@@ -79,6 +81,13 @@ def build_tech_gap(
             )
             .sort_values("日期")
         )
+        if not daily_gap.empty:
+            daily_path = (
+                daily_gap.groupby("日期", as_index=False)
+                .agg(差额=("差额", "mean"))
+                .sort_values("日期")
+            )
+            path = path.merge(daily_path, on="日期", how="left")
         if star50 is not None and report_end is not None:
             bench = star50_cumulative(star50, report_end)
             if not bench.empty:

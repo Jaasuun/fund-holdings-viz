@@ -58,6 +58,7 @@ const TECH_LINES = [
   { key: "推算", color: "#0f766e" },
   { key: "科创50", color: "#7c3aed" },
   { key: "差距", color: "#b45309" },
+  { key: "差额", color: "#db2777" },
 ] as const;
 
 const RETURN_LINES = [
@@ -260,6 +261,7 @@ export default function App() {
         实际: Number(item.实际) * 100,
         推算: Number(item.推算) * 100,
         差距: Number(item.差距) * 100,
+        差额: item.差额 == null ? null : Number(item.差额) * 100,
         科创50: item.科创50 == null ? null : Number(item.科创50) * 100,
       })),
     [tech],
@@ -358,7 +360,7 @@ export default function App() {
               <section className="card panel">
                 <h2>科技基金等权累计</h2>
                 <p>
-                  报告期末后，科技主题基金等权平均，并对照科创50。差距 = 实际累计 − 披露持仓推算累计。点击图例可隐藏或显示对应曲线。
+                  报告期末后，科技主题基金等权平均，并对照科创50。差距 = 累计实际 − 累计推算；差额 = 当日实际涨幅 − 当日推算涨幅。点击图例可隐藏或显示对应曲线。
                 </p>
                 <div className="chart" style={{ height: 320 }}>
                   <ResponsiveContainer>

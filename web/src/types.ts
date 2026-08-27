@@ -116,6 +116,7 @@ export type TechGapResponse = {
     实际: number;
     推算: number;
     差距: number;
+    差额?: number | null;
     基金数: number;
     科创50?: number | null;
   }>;
