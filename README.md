@@ -11,7 +11,7 @@
 | `ingest/` | 拉基金列表、规模、前十大持仓，写入 `data/raw/` |
 | `transform/` | 清洗、去重、交叉统计，写入 `data/processed/` |
 | `api/` | 只读缓存，给前端 JSON |
-| `web/` | 可视化前端（Vite / React，阶段 5） |
+| `web/` | 可视化前端（Vite / React） |
 | `data/` | 本地缓存，不入库 |
 
 ## 口径
@@ -23,7 +23,7 @@
 
 ## 状态
 
-阶段 1 进行中：已接入天天基金公募名单与季报规模，可生成本地偏股基金池。前十大持仓尚未拉取。
+阶段 1：已接入天天基金公募名单与季报规模，可生成本地偏股基金池，并有可视化概览页。前十大持仓尚未拉取。
 
 ## 本地环境
 
@@ -42,6 +42,7 @@ python -m ingest.universe
 查看基金池：
 
 ```bash
-uvicorn api.main:app --reload
-# GET http://127.0.0.1:8000/api/funds
+uvicorn api.main:app --reload --port 8000
+cd web && npm install && npm run dev
+# 浏览器打开 http://127.0.0.1:5173
 ```
