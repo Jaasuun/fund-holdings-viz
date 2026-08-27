@@ -14,6 +14,11 @@ data/processed/**
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
+# frp tunnel secrets / binary (keep *.example tracked)
+data/lyf-expose/**
+!data/lyf-expose/.gitkeep
+!data/lyf-expose/*.example
+
 # Frontend
 web/node_modules/
 web/dist/
@@ -26,3 +31,4 @@ web/.vite/
 *.log
 .env
 .env.*
+!.env.example

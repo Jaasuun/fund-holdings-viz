@@ -1,0 +1,12 @@
+serverAddr = "frp.lightyearfold.ai"
+serverPort = 8899
+
+auth.method = "token"
+auth.token = "REPLACE_ME"
+
+[[proxies]]
+name = "fundviz-8010-tmp"
+type = "http"
+localIP = "web"
+localPort = 8000
+customDomains = ["fundviz-8010-tmp.lightyearfold.ai"]

@@ -48,3 +48,17 @@ uvicorn api.main:app --reload --port 8000
 cd web && npm install && npm run dev
 # 浏览器打开 http://127.0.0.1:5173
 ```
+
+## 服务器部署（Docker + frpc）
+
+与雪球 / BitcoinQuant 相同：本机 `:8010`，公网 `https://fundviz-8010-tmp.lightyearfold.ai:8888/`。
+
+```bash
+# 在 nano_super ~/fund-holdings-viz
+cp .env.example .env          # 设置 AUTH_USERNAME / AUTH_PASSWORD
+# 准备 data/lyf-expose/frpc + frpc.docker.toml（token 与其它项目相同）
+# 准备 data/processed/（本机已跑过的缓存）
+docker compose up -d --build
+```
+
+浏览器会弹出 HTTP Basic 登录；账号密码见 `.env`。

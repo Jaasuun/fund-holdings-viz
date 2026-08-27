@@ -1,0 +1,39 @@
+# fund-holdings-viz on nano_super
+# Host :8010 + frpc public tunnel (same pattern as xueqiu / BitcoinQuant).
+name: fund-holdings-viz
+
+services:
+  web:
+    build: .
+    container_name: fundviz-web
+    restart: unless-stopped
+    ports:
+      - "8010:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data/processed:/app/data/processed:ro
+      - ./data/raw:/app/data/raw:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frpc:
+    image: harbor.lightyearfold.ai:8888/dockerhub-cache/library/alpine:3.20
+    container_name: fundviz-frpc
+    restart: unless-stopped
+    volumes:
+      - ./data/lyf-expose:/lyf-expose:ro
+    command: ["/lyf-expose/frpc", "-c", "/lyf-expose/frpc.docker.toml"]
+    depends_on:
+      web:
+        condition: service_healthy

@@ -9,12 +9,16 @@ from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
+from api.auth_gate import BasicAuthMiddleware, login_status
 from ingest.market import fetch_index_daily
 from transform.tech import STAR50_SYMBOL, build_tech_gap
 
 ROOT = Path(__file__).resolve().parents[1]
 PROCESSED = ROOT / "data" / "processed"
+WEB_DIST = ROOT / "web" / "dist"
 UNIVERSE_PATH = PROCESSED / "fund_universe.parquet"
 META_PATH = PROCESSED / "fund_universe_meta.json"
 HOLDINGS_PATH = PROCESSED / "fund_holdings.parquet"
@@ -25,12 +29,10 @@ BOARD_PATH = PROCESSED / "fund_return_board.parquet"
 RETURNS_META_PATH = PROCESSED / "returns_meta.json"
 
 app = FastAPI(title="fund-holdings-viz", version="0.1.0")
+app.add_middleware(BasicAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -49,7 +51,13 @@ def health() -> dict:
         "universe_ready": UNIVERSE_PATH.exists(),
         "holdings_ready": HOLDINGS_PATH.exists(),
         "returns_ready": RETURNS_PATH.exists(),
+        **login_status(),
     }
+
+
+@app.get("/api/auth/status")
+def auth_status() -> dict:
+    return login_status()
 
 
 @app.get("/api/funds")
@@ -194,3 +202,20 @@ def fund_returns(code: str) -> dict:
         "count": int(len(subset)),
         "days": _json_ready(subset),
     }
+
+
+if WEB_DIST.is_dir():
+    assets = WEB_DIST / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+
+    @app.get("/")
+    def spa_index() -> FileResponse:
+        return FileResponse(WEB_DIST / "index.html")
+
+    @app.get("/{full_path:path}")
+    def spa_fallback(full_path: str) -> FileResponse:
+        candidate = WEB_DIST / full_path
+        if candidate.is_file() and WEB_DIST in candidate.resolve().parents:
+            return FileResponse(candidate)
+        return FileResponse(WEB_DIST / "index.html")
