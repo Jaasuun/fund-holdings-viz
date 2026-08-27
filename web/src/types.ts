@@ -15,6 +15,8 @@ export type FundsResponse = {
   count: number;
   report_quarter: string | null;
   min_aum_yi: number | null;
+  holdings_quarters?: string[];
+  default_holdings_quarter?: string | null;
   funds: Fund[];
 };
 

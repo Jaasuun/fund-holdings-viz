@@ -151,6 +151,8 @@ def list_funds() -> dict:
         "count": int(len(frame)),
         "report_quarter": meta.get("report_quarter"),
         "min_aum_yi": meta.get("min_aum_yi"),
+        "holdings_quarters": _available_holdings_quarters(),
+        "default_holdings_quarter": _default_holdings_quarter(),
         "funds": frame.to_dict(orient="records"),
     }
 
@@ -290,11 +292,19 @@ if WEB_DIST.is_dir():
 
     @app.get("/")
     def spa_index() -> FileResponse:
-        return FileResponse(WEB_DIST / "index.html")
+        return FileResponse(
+            WEB_DIST / "index.html",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     @app.get("/{full_path:path}")
     def spa_fallback(full_path: str) -> FileResponse:
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
         candidate = WEB_DIST / full_path
         if candidate.is_file() and WEB_DIST in candidate.resolve().parents:
             return FileResponse(candidate)
-        return FileResponse(WEB_DIST / "index.html")
+        return FileResponse(
+            WEB_DIST / "index.html",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )

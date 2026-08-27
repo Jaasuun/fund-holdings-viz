@@ -362,6 +362,20 @@ tbody tr:hover {
   flex-wrap: wrap;
 }
 
+.period-hint {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.hero-periods {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 220px;
+}
+
 .period-label {
   color: var(--muted);
   font-size: 13px;
@@ -380,11 +394,16 @@ tbody tr:hover {
 .period-tab {
   border: 1px solid var(--line);
   background: #fff;
-  color: var(--muted);
+  color: var(--text);
   border-radius: 8px;
-  padding: 6px 12px;
+  padding: 8px 14px;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 500;
+}
+
+.period-tab:hover {
+  border-color: #94a3b8;
 }
 
 .period-tab.active {

@@ -103,16 +103,26 @@ export default function App() {
 
   useEffect(() => {
     fetchFunds()
-      .then(setData)
+      .then((payload) => {
+        setData(payload);
+        if (payload.holdings_quarters?.length) {
+          setHoldingsQuarters(payload.holdings_quarters);
+          setHoldingsQuarter(
+            (current) => current ?? payload.default_holdings_quarter ?? payload.holdings_quarters?.[0] ?? null,
+          );
+        }
+      })
       .catch((err: Error) => setError(err.message));
     fetchHoldingsPeriods()
       .then((payload) => {
         const labels = payload.periods.map((item) => item.report_quarter).filter(Boolean);
-        setHoldingsQuarters(labels);
-        setHoldingsQuarter((current) => current ?? payload.default_quarter ?? labels[0] ?? null);
+        if (labels.length) {
+          setHoldingsQuarters(labels);
+          setHoldingsQuarter((current) => current ?? payload.default_quarter ?? labels[0] ?? null);
+        }
       })
       .catch(() => {
-        /* stocks fetch still works for single-period caches */
+        /* stocks / funds payloads still carry quarter lists */
       });
     fetchReturns()
       .then(setReturns)
@@ -313,6 +323,21 @@ export default function App() {
     );
   }, [tech, techQuery]);
 
+  const quarterOptions = useMemo(() => {
+    const fromStocks = stocks?.available_quarters?.filter(Boolean) ?? [];
+    if (fromStocks.length) return fromStocks;
+    const fromFunds = data?.holdings_quarters?.filter(Boolean) ?? [];
+    if (fromFunds.length) return fromFunds;
+    return holdingsQuarters;
+  }, [stocks, data, holdingsQuarters]);
+
+  const activeHoldingsQuarter = holdingsQuarter ?? stocks?.report_quarter ?? data?.report_quarter ?? null;
+
+  const selectHoldingsQuarter = (label: string) => {
+    setHoldingsQuarter(label);
+    setView("stocks");
+  };
+
   if (error) {
     return (
       <div className="app">
@@ -337,9 +362,28 @@ export default function App() {
           <h1>规模超过 50 亿元的偏股公募</h1>
           <p className="lede">
             A/C 等份额已按主基金合并。科技页比较披露持仓推算累计与实际净值累计的差距。
+            持股排行可切换一季报 / 二季报。
           </p>
         </div>
-        <div className="badge">{formatQuarter(data.report_quarter)}</div>
+        {quarterOptions.length > 1 ? (
+          <div className="hero-periods">
+            <span className="period-label">持股报告期</span>
+            <div className="period-tabs">
+              {quarterOptions.map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  className={activeHoldingsQuarter === label ? "period-tab active" : "period-tab"}
+                  onClick={() => selectHoldingsQuarter(label)}
+                >
+                  {formatQuarter(label)}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="badge">{formatQuarter(activeHoldingsQuarter ?? data.report_quarter)}</div>
+        )}
       </header>
 
       <nav className="tabs">
@@ -621,23 +665,25 @@ export default function App() {
 
       {view === "stocks" ? (
         <>
-          {holdingsQuarters.length > 1 ? (
+          {quarterOptions.length > 1 ? (
             <div className="period-bar">
-              <span className="period-label">持股报告期</span>
+              <span className="period-label">当前查看</span>
               <div className="period-tabs">
-                {holdingsQuarters.map((label) => (
+                {quarterOptions.map((label) => (
                   <button
                     key={label}
                     type="button"
-                    className={holdingsQuarter === label ? "period-tab active" : "period-tab"}
-                    onClick={() => setHoldingsQuarter(label)}
+                    className={activeHoldingsQuarter === label ? "period-tab active" : "period-tab"}
+                    onClick={() => selectHoldingsQuarter(label)}
                   >
                     {formatQuarter(label)}
                   </button>
                 ))}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <p className="period-hint">{formatQuarter(activeHoldingsQuarter)}（仅一期持股缓存）</p>
+          )}
           <section className="kpis">
             <article className="card kpi">
               <span>覆盖股票</span>
@@ -916,14 +962,14 @@ export default function App() {
                     {fundHoldings.disclosure}
                   </span>
                 </p>
-                {holdingsQuarters.length > 1 ? (
+                {quarterOptions.length > 1 ? (
                   <div className="period-tabs compact">
-                    {holdingsQuarters.map((label) => (
+                    {quarterOptions.map((label) => (
                       <button
                         key={label}
                         type="button"
-                        className={holdingsQuarter === label ? "period-tab active" : "period-tab"}
-                        onClick={() => setHoldingsQuarter(label)}
+                        className={activeHoldingsQuarter === label ? "period-tab active" : "period-tab"}
+                        onClick={() => selectHoldingsQuarter(label)}
                       >
                         {formatQuarter(label)}
                       </button>
