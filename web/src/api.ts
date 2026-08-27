@@ -1,10 +1,26 @@
-import type { FundsResponse } from "./types";
+import type { FundsResponse, StocksResponse, FundHoldingsResponse, StockDetail } from "./types";
 
-export async function fetchFunds(): Promise<FundsResponse> {
-  const response = await fetch("/api/funds");
+async function readJson<T>(path: string): Promise<T> {
+  const response = await fetch(path);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail ?? `加载失败（${response.status}）`);
   }
   return response.json();
+}
+
+export function fetchFunds(): Promise<FundsResponse> {
+  return readJson("/api/funds");
+}
+
+export function fetchStocks(): Promise<StocksResponse> {
+  return readJson("/api/stocks");
+}
+
+export function fetchFundHoldings(code: string): Promise<FundHoldingsResponse> {
+  return readJson(`/api/funds/${code}/holdings`);
+}
+
+export function fetchStockDetail(code: string): Promise<StockDetail> {
+  return readJson(`/api/stocks/${code}`);
 }

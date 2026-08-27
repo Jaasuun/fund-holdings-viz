@@ -11,9 +11,17 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchFunds } from "./api";
-import { formatQuarter, formatYi } from "./format";
-import { TYPE_COLORS, type Fund, type FundsResponse } from "./types";
+import { fetchFundHoldings, fetchFunds, fetchStockDetail, fetchStocks } from "./api";
+import { formatPct, formatQuarter, formatYi } from "./format";
+import {
+  TYPE_COLORS,
+  type Fund,
+  type FundHoldingsResponse,
+  type FundsResponse,
+  type Stock,
+  type StockDetail,
+  type StocksResponse,
+} from "./types";
 
 const CHART_TICK = { fill: "#6b7280", fontSize: 12 };
 const CHART_AXIS = { fill: "#111827", fontSize: 12 };
@@ -37,12 +45,42 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("全部");
   const [selected, setSelected] = useState<Fund | null>(null);
+  const [view, setView] = useState<"funds" | "stocks">("stocks");
+  const [stocks, setStocks] = useState<StocksResponse | null>(null);
+  const [stocksError, setStocksError] = useState<string | null>(null);
+  const [stockQuery, setStockQuery] = useState("");
+  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
+  const [fundHoldings, setFundHoldings] = useState<FundHoldingsResponse | null>(null);
+  const [stockDetail, setStockDetail] = useState<StockDetail | null>(null);
 
   useEffect(() => {
     fetchFunds()
       .then(setData)
       .catch((err: Error) => setError(err.message));
+    fetchStocks()
+      .then(setStocks)
+      .catch((err: Error) => setStocksError(err.message));
   }, []);
+
+  useEffect(() => {
+    if (!selected) {
+      setFundHoldings(null);
+      return;
+    }
+    fetchFundHoldings(selected.代表代码)
+      .then(setFundHoldings)
+      .catch(() => setFundHoldings(null));
+  }, [selected]);
+
+  useEffect(() => {
+    if (!selectedStock) {
+      setStockDetail(null);
+      return;
+    }
+    fetchStockDetail(selectedStock.股票代码)
+      .then(setStockDetail)
+      .catch(() => setStockDetail(null));
+  }, [selectedStock]);
 
   const funds = data?.funds ?? [];
   const types = useMemo(
@@ -105,6 +143,27 @@ export default function App() {
     [filtered],
   );
 
+  const filteredStocks = useMemo(() => {
+    const q = stockQuery.trim().toLowerCase();
+    const list = stocks?.stocks ?? [];
+    if (!q) return list;
+    return list.filter((item) =>
+      `${item.股票名称}${item.股票代码}`.toLowerCase().includes(q),
+    );
+  }, [stocks, stockQuery]);
+
+  const stockBars = useMemo(
+    () =>
+      [...filteredStocks]
+        .slice(0, 12)
+        .map((item) => ({
+          name: item.股票名称,
+          aum: Number(item.持仓市值_亿元.toFixed(2)),
+        }))
+        .reverse(),
+    [filteredStocks],
+  );
+
   if (error) {
     return (
       <div className="app">
@@ -128,12 +187,112 @@ export default function App() {
           <p className="eyebrow">Fund Holdings Viz</p>
           <h1>规模超过 50 亿元的偏股公募</h1>
           <p className="lede">
-            A/C 等份额已按主基金合并。规模为季报期末净资产，持仓尚未接入，当前先看基金池结构。
+            A/C 等份额已按主基金合并。持股优先用中报/年报全部明细，没有再用季报前十大。
           </p>
         </div>
         <div className="badge">{formatQuarter(data.report_quarter)}</div>
       </header>
 
+      <nav className="tabs">
+        <button className={view === "stocks" ? "tab active" : "tab"} type="button" onClick={() => setView("stocks")}>
+          持股排行
+        </button>
+        <button className={view === "funds" ? "tab active" : "tab"} type="button" onClick={() => setView("funds")}>
+          基金池
+        </button>
+      </nav>
+
+      {view === "stocks" ? (
+        <>
+          <section className="kpis">
+            <article className="card kpi">
+              <span>覆盖股票</span>
+              <strong>{stocks?.count ?? "—"}</strong>
+            </article>
+            <article className="card kpi">
+              <span>全部持股基金</span>
+              <strong>{stocks?.full_book_funds ?? "—"}</strong>
+            </article>
+            <article className="card kpi">
+              <span>仅前十大基金</span>
+              <strong>{stocks?.top10_funds ?? "—"}</strong>
+            </article>
+            <article className="card kpi">
+              <span>第一大重仓</span>
+              <strong>{stocks?.stocks[0] ? formatYi(stocks.stocks[0].持仓市值_亿元, 1) : "—"}</strong>
+            </article>
+          </section>
+          {stocksError ? (
+            <p className="status error">{stocksError}。请先运行 python -m ingest.holdings。</p>
+          ) : null}
+          {stocks ? (
+            <>
+              <section className="card panel">
+                <h2>持仓市值排行</h2>
+                <p>池内基金持有市值合计，前 12 名。有中报的基金按全部持股计入，其余按前十大。</p>
+                <div className="chart" style={{ height: 420 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={stockBars} layout="vertical" margin={{ left: 16, right: 16 }}>
+                      <CartesianGrid stroke="#eef0f3" horizontal={false} />
+                      <XAxis type="number" tick={CHART_TICK} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="name" width={88} tick={CHART_AXIS} axisLine={false} tickLine={false} />
+                      <Tooltip
+                        formatter={(value) => [formatYi(Number(value), 2), "持仓市值"]}
+                        contentStyle={TOOLTIP_STYLE}
+                      />
+                      <Bar dataKey="aum" fill="#2563eb" radius={[0, 8, 8, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+              <section className="card table-wrap" style={{ marginTop: 14 }}>
+                <h2>股票明细</h2>
+                <p>
+                  {filteredStocks.length} / {stocks.count} 只。点击一行查看哪些基金持有。
+                </p>
+                <div className="toolbar">
+                  <input
+                    className="search"
+                    value={stockQuery}
+                    placeholder="搜索股票名称 / 代码"
+                    onChange={(event) => setStockQuery(event.target.value)}
+                  />
+                </div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>股票</th>
+                      <th className="num">持有基金</th>
+                      <th className="num">持仓市值</th>
+                      <th className="num">最高占净值</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredStocks.map((item) => (
+                      <tr key={item.股票代码} onClick={() => setSelectedStock(item)}>
+                        <td>{item.序号}</td>
+                        <td>
+                          <div>{item.股票名称}</div>
+                          <div className="type-pill">{item.股票代码}</div>
+                        </td>
+                        <td className="num">{item.持有基金数}</td>
+                        <td className="num">{formatYi(item.持仓市值_亿元, 2)}</td>
+                        <td className="num">{formatPct(item.最高占净值)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            </>
+          ) : !stocksError ? (
+            <p className="status">正在读取持股…</p>
+          ) : null}
+        </>
+      ) : null}
+
+      {view === "funds" ? (
+        <>
       <section className="kpis">
         <article className="card kpi">
           <span>入池产品</span>
@@ -286,6 +445,8 @@ export default function App() {
           </tbody>
         </table>
       </section>
+        </>
+      ) : null}
 
       {selected ? (
         <div className="overlay" onClick={() => setSelected(null)}>
@@ -309,8 +470,87 @@ export default function App() {
                 </span>
               ))}
             </div>
-            <p className="note">同一主基金的 A/C 份额持仓相同，已合并规模。前十大持仓下一阶段接入。</p>
+            {fundHoldings ? (
+              <>
+                <p className="drawer-meta" style={{ marginTop: 18 }}>
+                  持股 {fundHoldings.count} 只
+                  <span className={fundHoldings.disclosure === "全部持股" ? "tag full" : "tag top"}>
+                    {fundHoldings.disclosure}
+                  </span>
+                </p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>股票</th>
+                      <th className="num">占净值</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fundHoldings.holdings.map((item) => (
+                      <tr key={item.股票代码}>
+                        <td>{item.序号}</td>
+                        <td>
+                          {item.股票名称}
+                          <div className="type-pill">{item.股票代码}</div>
+                        </td>
+                        <td className="num">{formatPct(item.占净值比例)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : (
+              <p className="note">尚未拉到该基金持仓，请运行 python -m ingest.holdings。</p>
+            )}
             <button className="close" type="button" onClick={() => setSelected(null)}>
+              关闭
+            </button>
+          </aside>
+        </div>
+      ) : null}
+
+      {selectedStock ? (
+        <div className="overlay" onClick={() => setSelectedStock(null)}>
+          <aside className="drawer" onClick={(event) => event.stopPropagation()}>
+            <h2>{selectedStock.股票名称}</h2>
+            <p className="drawer-meta">{selectedStock.股票代码}</p>
+            <dl className="kv">
+              <dt>持有基金</dt>
+              <dd>{selectedStock.持有基金数}</dd>
+              <dt>持仓市值</dt>
+              <dd>{formatYi(selectedStock.持仓市值_亿元, 2)}</dd>
+              <dt>最高占净值</dt>
+              <dd>{formatPct(selectedStock.最高占净值)}</dd>
+            </dl>
+            {stockDetail ? (
+              <table style={{ marginTop: 16 }}>
+                <thead>
+                  <tr>
+                    <th>基金</th>
+                    <th className="num">占净值</th>
+                    <th>口径</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockDetail.holders.map((item) => (
+                    <tr key={`${item.基金代码}-${item.股票代码}`}>
+                      <td>
+                        {item.产品名称}
+                        <div className="type-pill">{item.基金代码}</div>
+                      </td>
+                      <td className="num">{formatPct(item.占净值比例)}</td>
+                      <td>
+                        <span className={item.披露口径 === "全部持股" ? "tag full" : "tag top"}>{item.披露口径}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="note">正在读取持有该股的基金…</p>
+            )}
+            <button className="close" type="button" onClick={() => setSelectedStock(null)}>
               关闭
             </button>
           </aside>

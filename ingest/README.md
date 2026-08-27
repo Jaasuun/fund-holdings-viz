@@ -10,5 +10,10 @@ python -m ingest.universe
 
 - `ak.fund_name_em()`：公募名单与基金类型
 - 天天基金季报规模明细：期末净资产（亿元）
+- 天天基金持股：中报/年报全部持股；若尚未披露则退回季报前十大
+
+```bash
+python -m ingest.holdings
+```
 
 限速和重试在 `eastmoney.py`。前十大持仓仍待下一阶段。

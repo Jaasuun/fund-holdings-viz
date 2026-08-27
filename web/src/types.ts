@@ -18,6 +18,55 @@ export type FundsResponse = {
   funds: Fund[];
 };
 
+export type Holding = {
+  序号: number;
+  基金代码: string;
+  产品名称: string;
+  代表简称: string;
+  股票代码: string;
+  股票名称: string;
+  占净值比例: number;
+  持股数: number;
+  持仓市值: number;
+  披露口径: "全部持股" | "前十大";
+  报告期: string;
+};
+
+export type Stock = {
+  序号: number;
+  股票代码: string;
+  股票名称: string;
+  持有基金数: number;
+  持仓市值_万元: number;
+  持仓市值_亿元: number;
+  平均占净值: number;
+  最高占净值: number;
+  全部持股基金数: number;
+  前十大基金数: number;
+};
+
+export type StocksResponse = {
+  count: number;
+  report_quarter: string | null;
+  full_book_funds: number | null;
+  top10_funds: number | null;
+  stocks: Stock[];
+};
+
+export type FundHoldingsResponse = {
+  fund_code: string;
+  disclosure: "全部持股" | "前十大";
+  report_quarter: string | null;
+  count: number;
+  holdings: Holding[];
+};
+
+export type StockDetail = {
+  stock: Stock;
+  count: number;
+  holders: Holding[];
+};
+
 export const TYPE_COLORS: Record<string, string> = {
   "混合型-偏股": "#0f766e",
   股票型: "#2563eb",
