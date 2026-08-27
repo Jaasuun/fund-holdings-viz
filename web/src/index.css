@@ -367,6 +367,11 @@ tbody tr:hover {
   color: #047857;
 }
 
+.tag.top {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
 .chg.pos {
   color: #15803d;
 }

@@ -5,6 +5,7 @@ import type {
   StockDetail,
   ReturnsBoardResponse,
   FundReturnsResponse,
+  TechGapResponse,
 } from "./types";
 
 async function readJson<T>(path: string): Promise<T> {
@@ -38,4 +39,8 @@ export function fetchReturns(): Promise<ReturnsBoardResponse> {
 
 export function fetchFundReturns(code: string): Promise<FundReturnsResponse> {
   return readJson(`/api/funds/${code}/returns`);
+}
+
+export function fetchTechGap(): Promise<TechGapResponse> {
+  return readJson("/api/returns/tech");
 }

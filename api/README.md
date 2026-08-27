@@ -6,4 +6,4 @@
 uvicorn api.main:app --reload
 ```
 
-当前接口：`GET /api/funds`、`GET /api/stocks`、`GET /api/returns`、`GET /api/funds/{code}/holdings`、`GET /api/funds/{code}/returns`、`GET /api/stocks/{code}`、`GET /health`。拉数是批任务，本层不打外部接口。前端开发时由 Vite 把 `/api` 代理到本服务。
+当前接口：`GET /api/funds`、`GET /api/stocks`、`GET /api/returns`、`GET /api/returns/tech`、`GET /api/funds/{code}/holdings`、`GET /api/funds/{code}/returns`、`GET /api/stocks/{code}`、`GET /health`。拉数是批任务，本层不打外部接口。前端开发时由 Vite 把 `/api` 代理到本服务。

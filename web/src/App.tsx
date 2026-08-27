@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchFundHoldings, fetchFundReturns, fetchFunds, fetchReturns, fetchStockDetail, fetchStocks } from "./api";
+import { fetchFundHoldings, fetchFundReturns, fetchFunds, fetchReturns, fetchStockDetail, fetchStocks, fetchTechGap } from "./api";
 import { formatPct, formatQuarter, formatSignedPct, formatYi } from "./format";
 import {
   TYPE_COLORS,
@@ -27,6 +27,7 @@ import {
   type Stock,
   type StockDetail,
   type StocksResponse,
+  type TechGapResponse,
 } from "./types";
 
 const CHART_TICK = { fill: "#6b7280", fontSize: 12 };
@@ -58,7 +59,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("全部");
   const [selected, setSelected] = useState<Fund | null>(null);
-  const [view, setView] = useState<"funds" | "stocks" | "returns">("returns");
+  const [view, setView] = useState<"funds" | "stocks" | "returns" | "tech">("tech");
   const [stocks, setStocks] = useState<StocksResponse | null>(null);
   const [stocksError, setStocksError] = useState<string | null>(null);
   const [stockQuery, setStockQuery] = useState("");
@@ -70,6 +71,10 @@ export default function App() {
   const [returnQuery, setReturnQuery] = useState("");
   const [selectedReturn, setSelectedReturn] = useState<ReturnRow | null>(null);
   const [fundReturns, setFundReturns] = useState<FundReturnsResponse | null>(null);
+  const [tech, setTech] = useState<TechGapResponse | null>(null);
+  const [techError, setTechError] = useState<string | null>(null);
+  const [techQuery, setTechQuery] = useState("");
+  const [selectedTech, setSelectedTech] = useState<ReturnRow | null>(null);
 
   useEffect(() => {
     fetchFunds()
@@ -81,6 +86,9 @@ export default function App() {
     fetchReturns()
       .then(setReturns)
       .catch((err: Error) => setReturnsError(err.message));
+    fetchTechGap()
+      .then(setTech)
+      .catch((err: Error) => setTechError(err.message));
   }, []);
 
   useEffect(() => {
@@ -112,6 +120,15 @@ export default function App() {
       .then(setFundReturns)
       .catch(() => setFundReturns(null));
   }, [selectedReturn]);
+
+  useEffect(() => {
+    if (!selectedTech) {
+      return;
+    }
+    fetchFundReturns(selectedTech.基金代码)
+      .then(setFundReturns)
+      .catch(() => setFundReturns(null));
+  }, [selectedTech]);
 
   const funds = data?.funds ?? [];
   const types = useMemo(
@@ -214,6 +231,38 @@ export default function App() {
     [fundReturns],
   );
 
+  const techPath = useMemo(
+    () =>
+      (tech?.path ?? []).map((item) => ({
+        date: String(item.日期).slice(5),
+        实际: Number(item.实际) * 100,
+        推算: Number(item.推算) * 100,
+        差距: Number(item.差距) * 100,
+      })),
+    [tech],
+  );
+
+  const techBars = useMemo(
+    () =>
+      [...(tech?.funds ?? [])]
+        .sort((a, b) => Number(a.差距 ?? 0) - Number(b.差距 ?? 0))
+        .map((item) => ({
+          name: (item.产品名称 ?? item.代表简称 ?? "").slice(0, 10),
+          full: item.产品名称,
+          gap: Number(item.差距 ?? 0) * 100,
+        })),
+    [tech],
+  );
+
+  const filteredTech = useMemo(() => {
+    const q = techQuery.trim().toLowerCase();
+    const list = tech?.funds ?? [];
+    if (!q) return list;
+    return list.filter((item) =>
+      `${item.产品名称 ?? ""}${item.代表简称 ?? ""}${item.基金代码}`.toLowerCase().includes(q),
+    );
+  }, [tech, techQuery]);
+
   if (error) {
     return (
       <div className="app">
@@ -237,13 +286,16 @@ export default function App() {
           <p className="eyebrow">Fund Holdings Viz</p>
           <h1>规模超过 50 亿元的偏股公募</h1>
           <p className="lede">
-            A/C 等份额已按主基金合并。持股优先中报全部明细，否则前十大。日涨幅按报告期末持仓冻结推算，并对照实际净值。
+            A/C 等份额已按主基金合并。科技页比较披露持仓推算累计与实际净值累计的差距。
           </p>
         </div>
         <div className="badge">{formatQuarter(data.report_quarter)}</div>
       </header>
 
       <nav className="tabs">
+        <button className={view === "tech" ? "tab active" : "tab"} type="button" onClick={() => setView("tech")}>
+          科技偏离
+        </button>
         <button className={view === "returns" ? "tab active" : "tab"} type="button" onClick={() => setView("returns")}>
           日涨幅
         </button>
@@ -254,6 +306,134 @@ export default function App() {
           基金池
         </button>
       </nav>
+
+      {view === "tech" ? (
+        <>
+          <section className="kpis">
+            <article className="card kpi">
+              <span>科技主题产品</span>
+              <strong>{tech?.fund_count ?? "—"}</strong>
+            </article>
+            <article className="card kpi">
+              <span>可对比</span>
+              <strong>{tech?.compared_count ?? "—"}</strong>
+            </article>
+            <article className="card kpi">
+              <span>等权实际累计</span>
+              <strong className={chgClass(tech?.mean_actual)}>{formatSignedPct(tech?.mean_actual)}</strong>
+            </article>
+            <article className="card kpi">
+              <span>等权差距 实际−推算</span>
+              <strong className={chgClass(tech?.mean_gap)}>{formatSignedPct(tech?.mean_gap)}</strong>
+            </article>
+          </section>
+          {techError ? (
+            <p className="status error">{techError}。请先运行 python -m ingest.returns。</p>
+          ) : null}
+          {tech ? (
+            <>
+              <section className="card panel">
+                <h2>科技基金等权累计</h2>
+                <p>
+                  报告期末后，科技主题基金等权平均。差距 = 实际累计 − 披露持仓推算累计。负值表示整体跑输季报持仓。
+                </p>
+                <div className="chart" style={{ height: 320 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={techPath} margin={{ left: 8, right: 16 }}>
+                      <CartesianGrid stroke="#eef0f3" />
+                      <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} />
+                      <YAxis tick={CHART_TICK} axisLine={false} tickLine={false} unit="%" />
+                      <Tooltip
+                        formatter={(value) => [`${Number(value).toFixed(2)}%`, ""]}
+                        contentStyle={TOOLTIP_STYLE}
+                      />
+                      <Legend />
+                      <Line type="monotone" dataKey="实际" stroke="#2563eb" dot={false} strokeWidth={2} />
+                      <Line type="monotone" dataKey="推算" stroke="#0f766e" dot={false} strokeWidth={2} />
+                      <Line type="monotone" dataKey="差距" stroke="#b45309" dot={false} strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+              <section className="card panel" style={{ marginTop: 14 }}>
+                <h2>个基差距 实际−推算</h2>
+                <p>越往左（红）实际越差于冻结持仓，越往右（绿）实际越好于季报持仓。</p>
+                <div className="chart" style={{ height: 640 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={techBars} layout="vertical" margin={{ left: 8, right: 16 }}>
+                      <CartesianGrid stroke="#eef0f3" horizontal={false} />
+                      <XAxis type="number" tick={CHART_TICK} axisLine={false} tickLine={false} unit="%" />
+                      <YAxis type="category" dataKey="name" width={108} tick={CHART_AXIS} axisLine={false} tickLine={false} />
+                      <Tooltip
+                        formatter={(value) => [`${Number(value).toFixed(2)}%`, "差距"]}
+                        labelFormatter={(_, payload) => String(payload?.[0]?.payload.full ?? "")}
+                        contentStyle={TOOLTIP_STYLE}
+                      />
+                      <Bar dataKey="gap" radius={[0, 8, 8, 0]}>
+                        {techBars.map((item) => (
+                          <Cell key={item.full} fill={item.gap >= 0 ? "#15803d" : "#b91c1c"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+              <section className="card table-wrap" style={{ marginTop: 14 }}>
+                <h2>科技基金累计差距</h2>
+                <p>
+                  {filteredTech.length} 只可对比。名称含科技 / 半导体 / 人工智能 / 信息 / 数字等；同产品多份额已去重。
+                </p>
+                <div className="toolbar">
+                  <input
+                    className="search"
+                    value={techQuery}
+                    placeholder="搜索基金名称 / 代码"
+                    onChange={(event) => setTechQuery(event.target.value)}
+                  />
+                </div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>基金</th>
+                      <th className="num">实际累计</th>
+                      <th className="num">推算累计</th>
+                      <th className="num">差距</th>
+                      <th className="num">覆盖净值</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTech.map((item) => (
+                      <tr
+                        key={item.基金代码}
+                        onClick={() => {
+                          setSelectedTech(item);
+                          setSelectedReturn(item);
+                          setView("returns");
+                        }}
+                      >
+                        <td>{item.序号}</td>
+                        <td>
+                          <div>{item.产品名称}</div>
+                          <div className="type-pill">
+                            {item.基金代码} · {item.代表简称}
+                          </div>
+                        </td>
+                        <td className={`num ${chgClass(item.实际累计)}`}>{formatSignedPct(item.实际累计)}</td>
+                        <td className={`num ${chgClass(item.推算累计)}`}>{formatSignedPct(item.推算累计)}</td>
+                        <td className={`num ${chgClass(item.差距)}`}>{formatSignedPct(item.差距)}</td>
+                        <td className="num">{item.覆盖净值比例 == null ? "—" : formatPct(item.覆盖净值比例 * 100, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            </>
+          ) : !techError ? (
+            <p className="status">正在计算科技偏离…</p>
+          ) : null}
+        </>
+      ) : null}
 
       {view === "returns" ? (
         <>

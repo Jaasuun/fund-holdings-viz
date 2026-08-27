@@ -9,6 +9,8 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from transform.tech import build_tech_gap
+
 ROOT = Path(__file__).resolve().parents[1]
 PROCESSED = ROOT / "data" / "processed"
 UNIVERSE_PATH = PROCESSED / "fund_universe.parquet"
@@ -138,6 +140,29 @@ def list_returns() -> dict:
         "report_end": meta.get("report_end"),
         "day_count": meta.get("day_count"),
         "funds": _json_ready(board),
+    }
+
+
+@app.get("/api/returns/tech")
+def tech_return_gap() -> dict:
+    if not RETURNS_PATH.exists() or not UNIVERSE_PATH.exists():
+        raise HTTPException(status_code=404, detail="尚未生成日涨幅，请先运行 python -m ingest.returns")
+    daily = pd.read_parquet(RETURNS_PATH)
+    universe = pd.read_parquet(UNIVERSE_PATH)
+    payload = build_tech_gap(daily, universe)
+    meta = _load_json(RETURNS_META_PATH)
+    return {
+        "report_quarter": meta.get("report_quarter"),
+        "report_end": meta.get("report_end"),
+        "fund_count": payload["fund_count"],
+        "compared_count": payload["compared_count"],
+        "snapshot_date": payload["snapshot_date"],
+        "mean_actual": payload["mean_actual"],
+        "mean_implied": payload["mean_implied"],
+        "mean_gap": payload["mean_gap"],
+        "median_gap": payload["median_gap"],
+        "path": _json_ready(payload["path"]) if not payload["path"].empty else [],
+        "funds": _json_ready(payload["funds"]) if not payload["funds"].empty else [],
     }
 
 

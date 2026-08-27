@@ -81,6 +81,7 @@ export type ReturnRow = {
   覆盖净值比例: number | null;
   实际累计: number | null;
   推算累计: number | null;
+  差距?: number | null;
 };
 
 export type ReturnsBoardResponse = {
@@ -97,6 +98,20 @@ export type FundReturnsResponse = {
   report_end: string | null;
   count: number;
   days: ReturnRow[];
+};
+
+export type TechGapResponse = {
+  report_quarter: string | null;
+  report_end: string | null;
+  fund_count: number;
+  compared_count: number;
+  snapshot_date: string | null;
+  mean_actual: number | null;
+  mean_implied: number | null;
+  mean_gap: number | null;
+  median_gap: number | null;
+  path: Array<{ 日期: string; 实际: number; 推算: number; 差距: number; 基金数: number }>;
+  funds: ReturnRow[];
 };
 
 export const TYPE_COLORS: Record<string, string> = {
