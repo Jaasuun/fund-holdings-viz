@@ -55,10 +55,10 @@ cd web && npm install && npm run dev
 
 ```bash
 # 在 nano_super ~/fund-holdings-viz
-cp .env.example .env          # 设置 AUTH_USERNAME / AUTH_PASSWORD
+cp .env.example .env          # 默认不登录；如需门禁再填 AUTH_USERNAME / AUTH_PASSWORD
 # 准备 data/lyf-expose/frpc + frpc.docker.toml（token 与其它项目相同）
 # 准备 data/processed/（本机已跑过的缓存）
 docker compose up -d --build
 ```
 
-浏览器会弹出 HTTP Basic 登录；账号密码见 `.env`。
+默认公开访问。若 `.env` 同时设置了 `AUTH_USERNAME` / `AUTH_PASSWORD`，浏览器会弹出 HTTP Basic 登录。
