@@ -37,7 +37,7 @@ pip install -e .
 
 ```bash
 python -m ingest.universe
-python -m ingest.holdings
+python -m ingest.holdings          # 默认拉当前季 + 上一季（如二季报 + 一季报）
 python -m ingest.returns
 ```
 

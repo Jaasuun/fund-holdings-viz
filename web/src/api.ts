@@ -6,6 +6,7 @@ import type {
   ReturnsBoardResponse,
   FundReturnsResponse,
   TechGapResponse,
+  HoldingsPeriodsResponse,
 } from "./types";
 
 async function readJson<T>(path: string): Promise<T> {
@@ -17,20 +18,30 @@ async function readJson<T>(path: string): Promise<T> {
   return response.json();
 }
 
+function withQuarter(path: string, quarter?: string | null): string {
+  if (!quarter) return path;
+  const join = path.includes("?") ? "&" : "?";
+  return `${path}${join}quarter=${encodeURIComponent(quarter)}`;
+}
+
 export function fetchFunds(): Promise<FundsResponse> {
   return readJson("/api/funds");
 }
 
-export function fetchStocks(): Promise<StocksResponse> {
-  return readJson("/api/stocks");
+export function fetchHoldingsPeriods(): Promise<HoldingsPeriodsResponse> {
+  return readJson("/api/holdings/periods");
 }
 
-export function fetchFundHoldings(code: string): Promise<FundHoldingsResponse> {
-  return readJson(`/api/funds/${code}/holdings`);
+export function fetchStocks(quarter?: string | null): Promise<StocksResponse> {
+  return readJson(withQuarter("/api/stocks", quarter));
 }
 
-export function fetchStockDetail(code: string): Promise<StockDetail> {
-  return readJson(`/api/stocks/${code}`);
+export function fetchFundHoldings(code: string, quarter?: string | null): Promise<FundHoldingsResponse> {
+  return readJson(withQuarter(`/api/funds/${code}/holdings`, quarter));
+}
+
+export function fetchStockDetail(code: string, quarter?: string | null): Promise<StockDetail> {
+  return readJson(withQuarter(`/api/stocks/${code}`, quarter));
 }
 
 export function fetchReturns(): Promise<ReturnsBoardResponse> {

@@ -354,6 +354,45 @@ tbody tr:hover {
   border-color: var(--accent);
 }
 
+.period-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.period-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.period-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.period-tabs.compact {
+  margin: 10px 0 14px;
+}
+
+.period-tab {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.period-tab.active {
+  color: #fff;
+  background: #0f172a;
+  border-color: #0f172a;
+}
+
 .tag {
   display: inline-flex;
   margin-left: 8px;

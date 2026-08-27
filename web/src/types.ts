@@ -50,7 +50,21 @@ export type StocksResponse = {
   report_quarter: string | null;
   full_book_funds: number | null;
   top10_funds: number | null;
+  available_quarters?: string[];
   stocks: Stock[];
+};
+
+export type HoldingsPeriod = {
+  report_quarter: string;
+  fund_count?: number;
+  full_book_funds?: number;
+  top10_funds?: number;
+  stock_count?: number;
+};
+
+export type HoldingsPeriodsResponse = {
+  default_quarter: string | null;
+  periods: HoldingsPeriod[];
 };
 
 export type FundHoldingsResponse = {

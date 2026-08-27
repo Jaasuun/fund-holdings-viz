@@ -7,13 +7,14 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.auth_gate import BasicAuthMiddleware, login_status
 from ingest.market import fetch_index_daily
+from transform.holdings import aggregate_stocks
 from transform.tech import STAR50_SYMBOL, build_tech_gap
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +45,73 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _holdings_meta() -> dict:
+    return _load_json(HOLDINGS_META_PATH)
+
+
+def _default_holdings_quarter(meta: dict | None = None) -> str | None:
+    meta = meta or _holdings_meta()
+    return meta.get("default_quarter") or meta.get("report_quarter")
+
+
+def _available_holdings_quarters(meta: dict | None = None) -> list[str]:
+    meta = meta or _holdings_meta()
+    periods = meta.get("periods") or []
+    labels = [str(item.get("report_quarter")) for item in periods if item.get("report_quarter")]
+    if labels:
+        return labels
+    if HOLDINGS_PATH.exists():
+        frame = pd.read_parquet(HOLDINGS_PATH)
+        if "报告期" in frame.columns and not frame.empty:
+            return sorted(frame["报告期"].astype(str).unique().tolist(), reverse=True)
+    default = _default_holdings_quarter(meta)
+    return [default] if default else []
+
+
+def _period_meta(quarter: str, meta: dict | None = None) -> dict:
+    meta = meta or _holdings_meta()
+    for item in meta.get("periods") or []:
+        if str(item.get("report_quarter")) == quarter:
+            return item
+    if str(meta.get("report_quarter")) == quarter:
+        return meta
+    return {"report_quarter": quarter}
+
+
+def _resolve_holdings_quarter(quarter: str | None) -> str:
+    meta = _holdings_meta()
+    available = _available_holdings_quarters(meta)
+    if not available:
+        raise HTTPException(status_code=404, detail="尚未生成持仓，请先运行 python -m ingest.holdings")
+    if quarter:
+        if quarter not in available:
+            raise HTTPException(status_code=404, detail=f"没有报告期 {quarter} 的持仓")
+        return quarter
+    return _default_holdings_quarter(meta) or available[0]
+
+
+def _holdings_for_quarter(quarter: str) -> pd.DataFrame:
+    if not HOLDINGS_PATH.exists():
+        raise HTTPException(status_code=404, detail="尚未生成持仓，请先运行 python -m ingest.holdings")
+    frame = pd.read_parquet(HOLDINGS_PATH)
+    if "报告期" not in frame.columns:
+        return frame
+    subset = frame[frame["报告期"].astype(str) == quarter]
+    if subset.empty:
+        raise HTTPException(status_code=404, detail=f"没有报告期 {quarter} 的持仓")
+    return subset
+
+
+def _stocks_for_quarter(quarter: str) -> pd.DataFrame:
+    path = PROCESSED / f"stocks_{quarter}.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    if quarter == _default_holdings_quarter() and STOCKS_PATH.exists():
+        return pd.read_parquet(STOCKS_PATH)
+    holdings = _holdings_for_quarter(quarter)
+    return aggregate_stocks(holdings)
+
+
 @app.get("/health")
 def health() -> dict:
     return {
@@ -58,6 +126,19 @@ def health() -> dict:
 @app.get("/api/auth/status")
 def auth_status() -> dict:
     return login_status()
+
+
+@app.get("/api/holdings/periods")
+def holdings_periods() -> dict:
+    meta = _holdings_meta()
+    periods = meta.get("periods") or []
+    if not periods:
+        for label in _available_holdings_quarters(meta):
+            periods.append(_period_meta(label, meta))
+    return {
+        "default_quarter": _default_holdings_quarter(meta),
+        "periods": periods,
+    }
 
 
 @app.get("/api/funds")
@@ -75,55 +156,53 @@ def list_funds() -> dict:
 
 
 @app.get("/api/funds/{code}/holdings")
-def fund_holdings(code: str) -> dict:
-    if not HOLDINGS_PATH.exists():
-        raise HTTPException(status_code=404, detail="尚未生成持仓，请先运行 python -m ingest.holdings")
+def fund_holdings(code: str, quarter: str | None = Query(default=None)) -> dict:
+    resolved = _resolve_holdings_quarter(quarter)
     code = str(code).zfill(6)
-    frame = pd.read_parquet(HOLDINGS_PATH)
+    frame = _holdings_for_quarter(resolved)
     subset = frame[frame["基金代码"].astype(str).str.zfill(6) == code]
     if subset.empty:
-        raise HTTPException(status_code=404, detail=f"没有 {code} 的持仓")
-    meta = _load_json(HOLDINGS_META_PATH)
+        raise HTTPException(status_code=404, detail=f"没有 {code} 在 {resolved} 的持仓")
     return {
         "fund_code": code,
         "disclosure": subset["披露口径"].iloc[0],
-        "report_quarter": meta.get("report_quarter"),
+        "report_quarter": resolved,
         "count": int(len(subset)),
         "holdings": subset.sort_values("序号").to_dict(orient="records"),
     }
 
 
 @app.get("/api/stocks")
-def list_stocks() -> dict:
-    if not STOCKS_PATH.exists():
-        raise HTTPException(status_code=404, detail="尚未生成持仓，请先运行 python -m ingest.holdings")
-    frame = pd.read_parquet(STOCKS_PATH)
-    meta = _load_json(HOLDINGS_META_PATH)
+def list_stocks(quarter: str | None = Query(default=None)) -> dict:
+    resolved = _resolve_holdings_quarter(quarter)
+    frame = _stocks_for_quarter(resolved)
+    period = _period_meta(resolved)
     return {
         "count": int(len(frame)),
-        "report_quarter": meta.get("report_quarter"),
-        "full_book_funds": meta.get("full_book_funds"),
-        "top10_funds": meta.get("top10_funds"),
+        "report_quarter": resolved,
+        "full_book_funds": period.get("full_book_funds"),
+        "top10_funds": period.get("top10_funds"),
+        "available_quarters": _available_holdings_quarters(),
         "stocks": frame.to_dict(orient="records"),
     }
 
 
 @app.get("/api/stocks/{code}")
-def stock_detail(code: str) -> dict:
-    if not HOLDINGS_PATH.exists() or not STOCKS_PATH.exists():
-        raise HTTPException(status_code=404, detail="尚未生成持仓，请先运行 python -m ingest.holdings")
-    stocks = pd.read_parquet(STOCKS_PATH)
-    holdings = pd.read_parquet(HOLDINGS_PATH)
+def stock_detail(code: str, quarter: str | None = Query(default=None)) -> dict:
+    resolved = _resolve_holdings_quarter(quarter)
+    stocks = _stocks_for_quarter(resolved)
+    holdings = _holdings_for_quarter(resolved)
     needle = str(code).strip()
     stock_rows = stocks[stocks["股票代码"].astype(str) == needle]
     if stock_rows.empty and needle.isdigit():
         stock_rows = stocks[stocks["股票代码"].astype(str).str.zfill(6) == needle.zfill(6)]
         needle = needle.zfill(6)
     if stock_rows.empty:
-        raise HTTPException(status_code=404, detail=f"没有 {code} 的持股汇总")
+        raise HTTPException(status_code=404, detail=f"没有 {code} 在 {resolved} 的持股汇总")
     holders = holdings[holdings["股票代码"].astype(str) == str(stock_rows.iloc[0]["股票代码"])]
     holders = holders.sort_values("持仓市值", ascending=False)
     return {
+        "report_quarter": resolved,
         "stock": stock_rows.iloc[0].to_dict(),
         "count": int(len(holders)),
         "holders": holders.to_dict(orient="records"),

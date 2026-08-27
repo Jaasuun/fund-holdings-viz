@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchFundHoldings, fetchFundReturns, fetchFunds, fetchReturns, fetchStockDetail, fetchStocks, fetchTechGap } from "./api";
+import { fetchFundHoldings, fetchFundReturns, fetchFunds, fetchHoldingsPeriods, fetchReturns, fetchStockDetail, fetchStocks, fetchTechGap } from "./api";
 import { formatPct, formatQuarter, formatSignedPct, formatYi } from "./format";
 import {
   TYPE_COLORS,
@@ -75,6 +75,8 @@ export default function App() {
   const [view, setView] = useState<"funds" | "stocks" | "returns" | "tech">("tech");
   const [stocks, setStocks] = useState<StocksResponse | null>(null);
   const [stocksError, setStocksError] = useState<string | null>(null);
+  const [holdingsQuarter, setHoldingsQuarter] = useState<string | null>(null);
+  const [holdingsQuarters, setHoldingsQuarters] = useState<string[]>([]);
   const [stockQuery, setStockQuery] = useState("");
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
   const [fundHoldings, setFundHoldings] = useState<FundHoldingsResponse | null>(null);
@@ -103,9 +105,15 @@ export default function App() {
     fetchFunds()
       .then(setData)
       .catch((err: Error) => setError(err.message));
-    fetchStocks()
-      .then(setStocks)
-      .catch((err: Error) => setStocksError(err.message));
+    fetchHoldingsPeriods()
+      .then((payload) => {
+        const labels = payload.periods.map((item) => item.report_quarter).filter(Boolean);
+        setHoldingsQuarters(labels);
+        setHoldingsQuarter((current) => current ?? payload.default_quarter ?? labels[0] ?? null);
+      })
+      .catch(() => {
+        /* stocks fetch still works for single-period caches */
+      });
     fetchReturns()
       .then(setReturns)
       .catch((err: Error) => setReturnsError(err.message));
@@ -115,24 +123,41 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    setStocks(null);
+    setStocksError(null);
+    setSelectedStock(null);
+    fetchStocks(holdingsQuarter)
+      .then((payload) => {
+        setStocks(payload);
+        if (payload.available_quarters?.length) {
+          setHoldingsQuarters(payload.available_quarters);
+        }
+        if (!holdingsQuarter && payload.report_quarter) {
+          setHoldingsQuarter(payload.report_quarter);
+        }
+      })
+      .catch((err: Error) => setStocksError(err.message));
+  }, [holdingsQuarter]);
+
+  useEffect(() => {
     if (!selected) {
       setFundHoldings(null);
       return;
     }
-    fetchFundHoldings(selected.代表代码)
+    fetchFundHoldings(selected.代表代码, holdingsQuarter)
       .then(setFundHoldings)
       .catch(() => setFundHoldings(null));
-  }, [selected]);
+  }, [selected, holdingsQuarter]);
 
   useEffect(() => {
     if (!selectedStock) {
       setStockDetail(null);
       return;
     }
-    fetchStockDetail(selectedStock.股票代码)
+    fetchStockDetail(selectedStock.股票代码, holdingsQuarter)
       .then(setStockDetail)
       .catch(() => setStockDetail(null));
-  }, [selectedStock]);
+  }, [selectedStock, holdingsQuarter]);
 
   useEffect(() => {
     if (!selectedReturn) {
@@ -596,6 +621,23 @@ export default function App() {
 
       {view === "stocks" ? (
         <>
+          {holdingsQuarters.length > 1 ? (
+            <div className="period-bar">
+              <span className="period-label">持股报告期</span>
+              <div className="period-tabs">
+                {holdingsQuarters.map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className={holdingsQuarter === label ? "period-tab active" : "period-tab"}
+                    onClick={() => setHoldingsQuarter(label)}
+                  >
+                    {formatQuarter(label)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <section className="kpis">
             <article className="card kpi">
               <span>覆盖股票</span>
@@ -620,8 +662,12 @@ export default function App() {
           {stocks ? (
             <>
               <section className="card panel">
-                <h2>持仓市值排行</h2>
-                <p>池内基金持有市值合计，前 12 名。有中报的基金按全部持股计入，其余按前十大。</p>
+                <h2>持仓市值排行 · {formatQuarter(stocks.report_quarter)}</h2>
+                <p>
+                  {stocks.report_quarter?.endsWith("_1") || stocks.report_quarter?.endsWith("_3")
+                    ? "一/三季报仅披露前十大重仓，按前十大市值合计排行。"
+                    : "池内基金持有市值合计，前 12 名。有中报/年报的基金按全部持股计入，其余按前十大。"}
+                </p>
                 <div className="chart" style={{ height: 420 }}>
                   <ResponsiveContainer>
                     <BarChart data={stockBars} layout="vertical" margin={{ left: 16, right: 16 }}>
@@ -865,11 +911,25 @@ export default function App() {
             {fundHoldings ? (
               <>
                 <p className="drawer-meta" style={{ marginTop: 18 }}>
-                  持股 {fundHoldings.count} 只
+                  {formatQuarter(fundHoldings.report_quarter)} · 持股 {fundHoldings.count} 只
                   <span className={fundHoldings.disclosure === "全部持股" ? "tag full" : "tag top"}>
                     {fundHoldings.disclosure}
                   </span>
                 </p>
+                {holdingsQuarters.length > 1 ? (
+                  <div className="period-tabs compact">
+                    {holdingsQuarters.map((label) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className={holdingsQuarter === label ? "period-tab active" : "period-tab"}
+                        onClick={() => setHoldingsQuarter(label)}
+                      >
+                        {formatQuarter(label)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <table>
                   <thead>
                     <tr>
