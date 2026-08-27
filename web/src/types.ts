@@ -19,8 +19,8 @@ export type FundsResponse = {
 };
 
 export const TYPE_COLORS: Record<string, string> = {
-  "混合型-偏股": "#3dcfb6",
-  股票型: "#6ea8ff",
-  "QDII-混合偏股": "#e0b44a",
-  "QDII-普通股票": "#e07a5f",
+  "混合型-偏股": "#0f766e",
+  股票型: "#2563eb",
+  "QDII-混合偏股": "#d97706",
+  "QDII-普通股票": "#dc2626",
 };

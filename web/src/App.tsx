@@ -15,6 +15,15 @@ import { fetchFunds } from "./api";
 import { formatQuarter, formatYi } from "./format";
 import { TYPE_COLORS, type Fund, type FundsResponse } from "./types";
 
+const CHART_TICK = { fill: "#6b7280", fontSize: 12 };
+const CHART_AXIS = { fill: "#111827", fontSize: 12 };
+const TOOLTIP_STYLE = {
+  background: "#ffffff",
+  border: "1px solid #e5e7eb",
+  borderRadius: 8,
+  color: "#111827",
+};
+
 const BUCKETS = [
   { key: "50–80 亿", test: (v: number) => v <= 80 },
   { key: "80–120 亿", test: (v: number) => v > 80 && v <= 120 },
@@ -153,7 +162,7 @@ export default function App() {
               <PieChart>
                 <Pie data={typeChart} dataKey="value" nameKey="name" innerRadius={58} outerRadius={92} paddingAngle={3}>
                   {typeChart.map((item) => (
-                    <Cell key={item.name} fill={TYPE_COLORS[item.name] ?? "#8b98a8"} />
+                    <Cell key={item.name} fill={TYPE_COLORS[item.name] ?? "#9ca3af"} />
                   ))}
                 </Pie>
                 <Tooltip
@@ -161,7 +170,7 @@ export default function App() {
                     `${value} 只 · ${formatYi(Number(extra.payload.aum), 0)}`,
                     String(name),
                   ]}
-                  contentStyle={{ background: "#121820", border: "1px solid rgba(231,237,243,.12)" }}
+                  contentStyle={TOOLTIP_STYLE}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -174,14 +183,14 @@ export default function App() {
           <div className="chart">
             <ResponsiveContainer>
               <BarChart data={buckets}>
-                <CartesianGrid stroke="rgba(231,237,243,.06)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: "#8b98a8", fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fill: "#8b98a8", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <CartesianGrid stroke="#eef0f3" vertical={false} />
+                <XAxis dataKey="name" tick={CHART_TICK} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={CHART_TICK} axisLine={false} tickLine={false} />
                 <Tooltip
                   formatter={(value) => [`${value} 只`, "产品数"]}
-                  contentStyle={{ background: "#121820", border: "1px solid rgba(231,237,243,.12)" }}
+                  contentStyle={TOOLTIP_STYLE}
                 />
-                <Bar dataKey="value" fill="#3dcfb6" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="value" fill="#2563eb" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -194,24 +203,24 @@ export default function App() {
         <div className="chart" style={{ height: 420 }}>
           <ResponsiveContainer>
             <BarChart data={topBars} layout="vertical" margin={{ left: 16, right: 16 }}>
-              <CartesianGrid stroke="rgba(231,237,243,.06)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "#8b98a8", fontSize: 12 }} axisLine={false} tickLine={false} />
+              <CartesianGrid stroke="#eef0f3" horizontal={false} />
+              <XAxis type="number" tick={CHART_TICK} axisLine={false} tickLine={false} />
               <YAxis
                 type="category"
                 dataKey="name"
                 width={148}
-                tick={{ fill: "#e7edf3", fontSize: 12 }}
+                tick={CHART_AXIS}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip
                 formatter={(value) => [formatYi(Number(value)), "规模"]}
                 labelFormatter={(_, payload) => String(payload?.[0]?.payload.full ?? "")}
-                contentStyle={{ background: "#121820", border: "1px solid rgba(231,237,243,.12)" }}
+                contentStyle={TOOLTIP_STYLE}
               />
               <Bar dataKey="aum" radius={[0, 8, 8, 0]}>
                 {topBars.map((item) => (
-                  <Cell key={item.full} fill={TYPE_COLORS[item.type] ?? "#3dcfb6"} />
+                  <Cell key={item.full} fill={TYPE_COLORS[item.type] ?? "#2563eb"} />
                 ))}
               </Bar>
             </BarChart>
