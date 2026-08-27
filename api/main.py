@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from transform.tech import build_tech_gap
+from ingest.market import fetch_index_daily
+from transform.tech import STAR50_SYMBOL, build_tech_gap
 
 ROOT = Path(__file__).resolve().parents[1]
 PROCESSED = ROOT / "data" / "processed"
@@ -149,8 +151,16 @@ def tech_return_gap() -> dict:
         raise HTTPException(status_code=404, detail="尚未生成日涨幅，请先运行 python -m ingest.returns")
     daily = pd.read_parquet(RETURNS_PATH)
     universe = pd.read_parquet(UNIVERSE_PATH)
-    payload = build_tech_gap(daily, universe)
     meta = _load_json(RETURNS_META_PATH)
+    report_end_raw = meta.get("report_end")
+    report_end = date.fromisoformat(report_end_raw) if report_end_raw else None
+    star50 = pd.DataFrame()
+    if report_end is not None:
+        try:
+            star50 = fetch_index_daily(STAR50_SYMBOL)
+        except Exception:  # noqa: BLE001 — chart still useful without benchmark
+            star50 = pd.DataFrame()
+    payload = build_tech_gap(daily, universe, star50=star50, report_end=report_end)
     return {
         "report_quarter": meta.get("report_quarter"),
         "report_end": meta.get("report_end"),
@@ -161,6 +171,7 @@ def tech_return_gap() -> dict:
         "mean_implied": payload["mean_implied"],
         "mean_gap": payload["mean_gap"],
         "median_gap": payload["median_gap"],
+        "star50_latest": payload.get("star50_latest"),
         "path": _json_ready(payload["path"]) if not payload["path"].empty else [],
         "funds": _json_ready(payload["funds"]) if not payload["funds"].empty else [],
     }

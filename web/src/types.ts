@@ -110,7 +110,15 @@ export type TechGapResponse = {
   mean_implied: number | null;
   mean_gap: number | null;
   median_gap: number | null;
-  path: Array<{ 日期: string; 实际: number; 推算: number; 差距: number; 基金数: number }>;
+  star50_latest: number | null;
+  path: Array<{
+    日期: string;
+    实际: number;
+    推算: number;
+    差距: number;
+    基金数: number;
+    科创50?: number | null;
+  }>;
   funds: ReturnRow[];
 };
 

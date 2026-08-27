@@ -45,6 +45,25 @@ def fetch_a_share_daily(code: str, start: date, end: date, retries: int = 1) -> 
     raise RuntimeError(f"price fetch failed {code}") from last_error
 
 
+def fetch_index_daily(symbol: str = "sh000688", retries: int = 3) -> pd.DataFrame:
+    """Sina daily bars for a mainland index, e.g. sh000688 科创50."""
+    last_error: Exception | None = None
+    for attempt in range(retries):
+        try:
+            frame = ak.stock_zh_index_daily(symbol=symbol)
+            if frame is None or frame.empty:
+                return pd.DataFrame()
+            out = frame.rename(columns={"date": "日期", "close": "收盘"})[["日期", "收盘"]].copy()
+            out["日期"] = pd.to_datetime(out["日期"]).dt.date
+            out["收盘"] = pd.to_numeric(out["收盘"], errors="coerce")
+            out["指数代码"] = symbol
+            return out.dropna(subset=["收盘"]).sort_values("日期")
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            time.sleep(1.2 * (attempt + 1))
+    raise RuntimeError(f"index fetch failed {symbol}") from last_error
+
+
 def fetch_fund_nav(code: str, start: date, retries: int = 3) -> pd.DataFrame:
     last_error: Exception | None = None
     for attempt in range(retries):

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 
 import pandas as pd
 
 TECH_NAME_RE = re.compile(
     r"科技|半导体|人工智能|信息|数字|芯片|集成电路|电子|通信|计算机|互联网"
 )
+STAR50_SYMBOL = "sh000688"
 
 
 def is_tech_fund(name: str) -> bool:
@@ -27,7 +29,30 @@ def tech_universe(universe: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def build_tech_gap(daily: pd.DataFrame, universe: pd.DataFrame) -> dict:
+def star50_cumulative(index: pd.DataFrame, report_end: date) -> pd.DataFrame:
+    """Cumulative return of 科创50 after report_end, base = last close on/before report_end."""
+    if index is None or index.empty:
+        return pd.DataFrame(columns=["日期", "科创50"])
+    frame = index.copy()
+    frame["日期"] = pd.to_datetime(frame["日期"]).dt.date
+    frame = frame.sort_values("日期")
+    base_rows = frame[frame["日期"] <= report_end]
+    if base_rows.empty:
+        return pd.DataFrame(columns=["日期", "科创50"])
+    base = float(base_rows.iloc[-1]["收盘"])
+    if base == 0:
+        return pd.DataFrame(columns=["日期", "科创50"])
+    after = frame[frame["日期"] > report_end].copy()
+    after["科创50"] = after["收盘"] / base - 1.0
+    return after[["日期", "科创50"]]
+
+
+def build_tech_gap(
+    daily: pd.DataFrame,
+    universe: pd.DataFrame,
+    star50: pd.DataFrame | None = None,
+    report_end: date | None = None,
+) -> dict:
     tech = tech_universe(universe)
     codes = set(tech["代表代码"].astype(str).str.zfill(6))
     names = tech[["代表代码", "基金类型", "规模_亿元"]].copy()
@@ -54,12 +79,20 @@ def build_tech_gap(daily: pd.DataFrame, universe: pd.DataFrame) -> dict:
             )
             .sort_values("日期")
         )
+        if star50 is not None and report_end is not None:
+            bench = star50_cumulative(star50, report_end)
+            if not bench.empty:
+                path = path.merge(bench, on="日期", how="left")
 
     snapshot_date = both["日期"].max() if not both.empty else None
     snap = both[both["日期"] == snapshot_date].copy() if snapshot_date is not None else both
     if not snap.empty:
         snap = snap.sort_values("差距").reset_index(drop=True)
         snap.insert(0, "序号", range(1, len(snap) + 1))
+
+    star50_latest = None
+    if not path.empty and "科创50" in path.columns and path["科创50"].notna().any():
+        star50_latest = float(path.dropna(subset=["科创50"]).iloc[-1]["科创50"])
 
     return {
         "fund_count": int(len(tech)),
@@ -69,6 +102,7 @@ def build_tech_gap(daily: pd.DataFrame, universe: pd.DataFrame) -> dict:
         "mean_implied": float(snap["推算累计"].mean()) if not snap.empty else None,
         "mean_gap": float(snap["差距"].mean()) if not snap.empty else None,
         "median_gap": float(snap["差距"].median()) if not snap.empty else None,
+        "star50_latest": star50_latest,
         "path": path,
         "funds": snap,
     }

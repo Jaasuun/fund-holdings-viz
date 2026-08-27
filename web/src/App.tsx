@@ -238,6 +238,7 @@ export default function App() {
         实际: Number(item.实际) * 100,
         推算: Number(item.推算) * 100,
         差距: Number(item.差距) * 100,
+        科创50: item.科创50 == null ? null : Number(item.科创50) * 100,
       })),
     [tech],
   );
@@ -315,16 +316,16 @@ export default function App() {
               <strong>{tech?.fund_count ?? "—"}</strong>
             </article>
             <article className="card kpi">
-              <span>可对比</span>
-              <strong>{tech?.compared_count ?? "—"}</strong>
-            </article>
-            <article className="card kpi">
               <span>等权实际累计</span>
               <strong className={chgClass(tech?.mean_actual)}>{formatSignedPct(tech?.mean_actual)}</strong>
             </article>
             <article className="card kpi">
               <span>等权差距 实际−推算</span>
               <strong className={chgClass(tech?.mean_gap)}>{formatSignedPct(tech?.mean_gap)}</strong>
+            </article>
+            <article className="card kpi">
+              <span>科创50累计</span>
+              <strong className={chgClass(tech?.star50_latest)}>{formatSignedPct(tech?.star50_latest)}</strong>
             </article>
           </section>
           {techError ? (
@@ -335,7 +336,7 @@ export default function App() {
               <section className="card panel">
                 <h2>科技基金等权累计</h2>
                 <p>
-                  报告期末后，科技主题基金等权平均。差距 = 实际累计 − 披露持仓推算累计。负值表示整体跑输季报持仓。
+                  报告期末后，科技主题基金等权平均，并对照科创50。差距 = 实际累计 − 披露持仓推算累计。负值表示整体跑输季报持仓。
                 </p>
                 <div className="chart" style={{ height: 320 }}>
                   <ResponsiveContainer>
@@ -350,6 +351,7 @@ export default function App() {
                       <Legend />
                       <Line type="monotone" dataKey="实际" stroke="#2563eb" dot={false} strokeWidth={2} />
                       <Line type="monotone" dataKey="推算" stroke="#0f766e" dot={false} strokeWidth={2} />
+                      <Line type="monotone" dataKey="科创50" stroke="#7c3aed" dot={false} strokeWidth={2} />
                       <Line type="monotone" dataKey="差距" stroke="#b45309" dot={false} strokeWidth={2} />
                     </LineChart>
                   </ResponsiveContainer>
