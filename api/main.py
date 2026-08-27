@@ -16,6 +16,9 @@ META_PATH = PROCESSED / "fund_universe_meta.json"
 HOLDINGS_PATH = PROCESSED / "fund_holdings.parquet"
 STOCKS_PATH = PROCESSED / "stocks.parquet"
 HOLDINGS_META_PATH = PROCESSED / "holdings_meta.json"
+RETURNS_PATH = PROCESSED / "fund_daily_returns.parquet"
+BOARD_PATH = PROCESSED / "fund_return_board.parquet"
+RETURNS_META_PATH = PROCESSED / "returns_meta.json"
 
 app = FastAPI(title="fund-holdings-viz", version="0.1.0")
 app.add_middleware(
@@ -41,6 +44,7 @@ def health() -> dict:
         "ok": True,
         "universe_ready": UNIVERSE_PATH.exists(),
         "holdings_ready": HOLDINGS_PATH.exists(),
+        "returns_ready": RETURNS_PATH.exists(),
     }
 
 
@@ -111,4 +115,46 @@ def stock_detail(code: str) -> dict:
         "stock": stock_rows.iloc[0].to_dict(),
         "count": int(len(holders)),
         "holders": holders.to_dict(orient="records"),
+    }
+
+
+def _json_ready(frame: pd.DataFrame) -> list[dict]:
+    out = frame.copy()
+    for column in out.columns:
+        if str(out[column].dtype).startswith("date") or column == "日期":
+            out[column] = out[column].astype(str)
+    return json.loads(out.to_json(orient="records", force_ascii=False))
+
+
+@app.get("/api/returns")
+def list_returns() -> dict:
+    if not BOARD_PATH.exists():
+        raise HTTPException(status_code=404, detail="尚未生成日涨幅，请先运行 python -m ingest.returns")
+    board = pd.read_parquet(BOARD_PATH)
+    meta = _load_json(RETURNS_META_PATH)
+    return {
+        "count": int(len(board)),
+        "report_quarter": meta.get("report_quarter"),
+        "report_end": meta.get("report_end"),
+        "day_count": meta.get("day_count"),
+        "funds": _json_ready(board),
+    }
+
+
+@app.get("/api/funds/{code}/returns")
+def fund_returns(code: str) -> dict:
+    if not RETURNS_PATH.exists():
+        raise HTTPException(status_code=404, detail="尚未生成日涨幅，请先运行 python -m ingest.returns")
+    code = str(code).zfill(6)
+    frame = pd.read_parquet(RETURNS_PATH)
+    subset = frame[frame["基金代码"].astype(str).str.zfill(6) == code].sort_values("日期")
+    if subset.empty:
+        raise HTTPException(status_code=404, detail=f"没有 {code} 的日涨幅")
+    meta = _load_json(RETURNS_META_PATH)
+    return {
+        "fund_code": code,
+        "report_quarter": meta.get("report_quarter"),
+        "report_end": meta.get("report_end"),
+        "count": int(len(subset)),
+        "days": _json_ready(subset),
     }

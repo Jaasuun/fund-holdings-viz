@@ -1,4 +1,11 @@
-import type { FundsResponse, StocksResponse, FundHoldingsResponse, StockDetail } from "./types";
+import type {
+  FundsResponse,
+  StocksResponse,
+  FundHoldingsResponse,
+  StockDetail,
+  ReturnsBoardResponse,
+  FundReturnsResponse,
+} from "./types";
 
 async function readJson<T>(path: string): Promise<T> {
   const response = await fetch(path);
@@ -23,4 +30,12 @@ export function fetchFundHoldings(code: string): Promise<FundHoldingsResponse> {
 
 export function fetchStockDetail(code: string): Promise<StockDetail> {
   return readJson(`/api/stocks/${code}`);
+}
+
+export function fetchReturns(): Promise<ReturnsBoardResponse> {
+  return readJson("/api/returns");
+}
+
+export function fetchFundReturns(code: string): Promise<FundReturnsResponse> {
+  return readJson(`/api/funds/${code}/returns`);
 }

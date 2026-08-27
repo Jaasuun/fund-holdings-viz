@@ -12,8 +12,6 @@ python -m ingest.universe
 - 天天基金季报规模明细：期末净资产（亿元）
 - 天天基金持股：中报/年报全部持股；若尚未披露则退回季报前十大
 
-```bash
-python -m ingest.holdings
-```
+- 持股之后可跑 `python -m ingest.returns`：按披露持仓冻结推算每日涨幅，并对照基金实际净值日增长率
 
 限速和重试在 `eastmoney.py`。前十大持仓仍待下一阶段。

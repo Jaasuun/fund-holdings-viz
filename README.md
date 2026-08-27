@@ -23,7 +23,7 @@
 
 ## 状态
 
-阶段 1：已接入天天基金公募名单、季报规模和持股。持股优先中报/年报全部明细，没有则退回季报前十大。
+阶段 1：已接入名单、规模、持股，以及报告期末之后的日涨幅（实际净值 vs 披露持仓推算）。
 
 ## 本地环境
 
@@ -38,6 +38,7 @@ pip install -e .
 ```bash
 python -m ingest.universe
 python -m ingest.holdings
+python -m ingest.returns
 ```
 
 查看基金池：

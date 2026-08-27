@@ -367,9 +367,12 @@ tbody tr:hover {
   color: #047857;
 }
 
-.tag.top {
-  background: #fff7ed;
-  color: #c2410c;
+.chg.pos {
+  color: #15803d;
+}
+
+.chg.neg {
+  color: #b91c1c;
 }
 
 @media (max-width: 900px) {

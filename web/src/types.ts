@@ -67,6 +67,38 @@ export type StockDetail = {
   holders: Holding[];
 };
 
+export type ReturnRow = {
+  序号?: number;
+  基金代码: string;
+  产品名称: string;
+  代表简称: string;
+  基金类型?: string;
+  规模_亿元?: number;
+  日期: string;
+  单位净值: number | null;
+  实际涨幅: number | null;
+  推算涨幅: number | null;
+  覆盖净值比例: number | null;
+  实际累计: number | null;
+  推算累计: number | null;
+};
+
+export type ReturnsBoardResponse = {
+  count: number;
+  report_quarter: string | null;
+  report_end: string | null;
+  day_count: number | null;
+  funds: ReturnRow[];
+};
+
+export type FundReturnsResponse = {
+  fund_code: string;
+  report_quarter: string | null;
+  report_end: string | null;
+  count: number;
+  days: ReturnRow[];
+};
+
 export const TYPE_COLORS: Record<string, string> = {
   "混合型-偏股": "#0f766e",
   股票型: "#2563eb",

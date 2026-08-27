@@ -4,6 +4,9 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -11,13 +14,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchFundHoldings, fetchFunds, fetchStockDetail, fetchStocks } from "./api";
-import { formatPct, formatQuarter, formatYi } from "./format";
+import { fetchFundHoldings, fetchFundReturns, fetchFunds, fetchReturns, fetchStockDetail, fetchStocks } from "./api";
+import { formatPct, formatQuarter, formatSignedPct, formatYi } from "./format";
 import {
   TYPE_COLORS,
   type Fund,
   type FundHoldingsResponse,
+  type FundReturnsResponse,
   type FundsResponse,
+  type ReturnRow,
+  type ReturnsBoardResponse,
   type Stock,
   type StockDetail,
   type StocksResponse,
@@ -39,19 +45,31 @@ const BUCKETS = [
   { key: "200 亿以上", test: (v: number) => v > 200 },
 ];
 
+function chgClass(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "chg";
+  if (Number(value) > 0) return "chg pos";
+  if (Number(value) < 0) return "chg neg";
+  return "chg";
+}
+
 export default function App() {
   const [data, setData] = useState<FundsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("全部");
   const [selected, setSelected] = useState<Fund | null>(null);
-  const [view, setView] = useState<"funds" | "stocks">("stocks");
+  const [view, setView] = useState<"funds" | "stocks" | "returns">("returns");
   const [stocks, setStocks] = useState<StocksResponse | null>(null);
   const [stocksError, setStocksError] = useState<string | null>(null);
   const [stockQuery, setStockQuery] = useState("");
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
   const [fundHoldings, setFundHoldings] = useState<FundHoldingsResponse | null>(null);
   const [stockDetail, setStockDetail] = useState<StockDetail | null>(null);
+  const [returns, setReturns] = useState<ReturnsBoardResponse | null>(null);
+  const [returnsError, setReturnsError] = useState<string | null>(null);
+  const [returnQuery, setReturnQuery] = useState("");
+  const [selectedReturn, setSelectedReturn] = useState<ReturnRow | null>(null);
+  const [fundReturns, setFundReturns] = useState<FundReturnsResponse | null>(null);
 
   useEffect(() => {
     fetchFunds()
@@ -60,6 +78,9 @@ export default function App() {
     fetchStocks()
       .then(setStocks)
       .catch((err: Error) => setStocksError(err.message));
+    fetchReturns()
+      .then(setReturns)
+      .catch((err: Error) => setReturnsError(err.message));
   }, []);
 
   useEffect(() => {
@@ -81,6 +102,16 @@ export default function App() {
       .then(setStockDetail)
       .catch(() => setStockDetail(null));
   }, [selectedStock]);
+
+  useEffect(() => {
+    if (!selectedReturn) {
+      setFundReturns(null);
+      return;
+    }
+    fetchFundReturns(selectedReturn.基金代码)
+      .then(setFundReturns)
+      .catch(() => setFundReturns(null));
+  }, [selectedReturn]);
 
   const funds = data?.funds ?? [];
   const types = useMemo(
@@ -164,6 +195,25 @@ export default function App() {
     [filteredStocks],
   );
 
+  const filteredReturns = useMemo(() => {
+    const q = returnQuery.trim().toLowerCase();
+    const list = returns?.funds ?? [];
+    if (!q) return list;
+    return list.filter((item) =>
+      `${item.产品名称 ?? ""}${item.代表简称 ?? ""}${item.基金代码}`.toLowerCase().includes(q),
+    );
+  }, [returns, returnQuery]);
+
+  const returnChart = useMemo(
+    () =>
+      (fundReturns?.days ?? []).map((item) => ({
+        date: String(item.日期).slice(5),
+        实际: item.实际累计 == null ? null : Number(item.实际累计) * 100,
+        推算: item.推算累计 == null ? null : Number(item.推算累计) * 100,
+      })),
+    [fundReturns],
+  );
+
   if (error) {
     return (
       <div className="app">
@@ -187,13 +237,16 @@ export default function App() {
           <p className="eyebrow">Fund Holdings Viz</p>
           <h1>规模超过 50 亿元的偏股公募</h1>
           <p className="lede">
-            A/C 等份额已按主基金合并。持股优先用中报/年报全部明细，没有再用季报前十大。
+            A/C 等份额已按主基金合并。持股优先中报全部明细，否则前十大。日涨幅按报告期末持仓冻结推算，并对照实际净值。
           </p>
         </div>
         <div className="badge">{formatQuarter(data.report_quarter)}</div>
       </header>
 
       <nav className="tabs">
+        <button className={view === "returns" ? "tab active" : "tab"} type="button" onClick={() => setView("returns")}>
+          日涨幅
+        </button>
         <button className={view === "stocks" ? "tab active" : "tab"} type="button" onClick={() => setView("stocks")}>
           持股排行
         </button>
@@ -201,6 +254,109 @@ export default function App() {
           基金池
         </button>
       </nav>
+
+      {view === "returns" ? (
+        <>
+          <section className="kpis">
+            <article className="card kpi">
+              <span>有涨幅的基金</span>
+              <strong>{returns?.count ?? "—"}</strong>
+            </article>
+            <article className="card kpi">
+              <span>交易日</span>
+              <strong>{returns?.day_count ?? "—"}</strong>
+            </article>
+            <article className="card kpi">
+              <span>最新一日领涨</span>
+              <strong className={chgClass(returns?.funds[0]?.实际涨幅)}>
+                {returns?.funds[0] ? formatSignedPct(returns.funds[0].实际涨幅) : "—"}
+              </strong>
+            </article>
+            <article className="card kpi">
+              <span>报告期末</span>
+              <strong style={{ fontSize: 20 }}>{returns?.report_end ?? "—"}</strong>
+            </article>
+          </section>
+          {returnsError ? (
+            <p className="status error">{returnsError}。请先运行 python -m ingest.returns。</p>
+          ) : null}
+          {returns ? (
+            <>
+              <section className="card panel">
+                <h2>{selectedReturn ? `${selectedReturn.代表简称} 累计涨幅` : "点选基金查看累计曲线"}</h2>
+                <p>实际净值来自基金公布的日增长率；推算按披露持仓权重和 A 股后复权行情，现金及其他资产按 0。</p>
+                <div className="chart" style={{ height: 320 }}>
+                  {returnChart.length ? (
+                    <ResponsiveContainer>
+                      <LineChart data={returnChart} margin={{ left: 8, right: 16 }}>
+                        <CartesianGrid stroke="#eef0f3" />
+                        <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} />
+                        <YAxis tick={CHART_TICK} axisLine={false} tickLine={false} unit="%" />
+                        <Tooltip
+                          formatter={(value) => [`${Number(value).toFixed(2)}%`, ""]}
+                          contentStyle={TOOLTIP_STYLE}
+                        />
+                        <Legend />
+                        <Line type="monotone" dataKey="实际" stroke="#2563eb" dot={false} strokeWidth={2} />
+                        <Line type="monotone" dataKey="推算" stroke="#0f766e" dot={false} strokeWidth={2} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="status">选择下面表格中的一只基金。</p>
+                  )}
+                </div>
+              </section>
+              <section className="card table-wrap" style={{ marginTop: 14 }}>
+                <h2>最新一日涨幅</h2>
+                <p>
+                  {filteredReturns.length} / {returns.count} 只。实际为基金净值日涨幅，推算为披露持仓组合日涨幅。
+                </p>
+                <div className="toolbar">
+                  <input
+                    className="search"
+                    value={returnQuery}
+                    placeholder="搜索基金名称 / 代码"
+                    onChange={(event) => setReturnQuery(event.target.value)}
+                  />
+                </div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>基金</th>
+                      <th>日期</th>
+                      <th className="num">实际日涨幅</th>
+                      <th className="num">持仓推算</th>
+                      <th className="num">实际累计</th>
+                      <th className="num">覆盖净值</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredReturns.map((item) => (
+                      <tr key={item.基金代码} onClick={() => setSelectedReturn(item)}>
+                        <td>{item.序号}</td>
+                        <td>
+                          <div>{item.产品名称}</div>
+                          <div className="type-pill">
+                            {item.基金代码} · {item.代表简称}
+                          </div>
+                        </td>
+                        <td>{item.日期}</td>
+                        <td className={`num ${chgClass(item.实际涨幅)}`}>{formatSignedPct(item.实际涨幅)}</td>
+                        <td className={`num ${chgClass(item.推算涨幅)}`}>{formatSignedPct(item.推算涨幅)}</td>
+                        <td className={`num ${chgClass(item.实际累计)}`}>{formatSignedPct(item.实际累计)}</td>
+                        <td className="num">{item.覆盖净值比例 == null ? "—" : formatPct(item.覆盖净值比例 * 100, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            </>
+          ) : !returnsError ? (
+            <p className="status">正在读取日涨幅…</p>
+          ) : null}
+        </>
+      ) : null}
 
       {view === "stocks" ? (
         <>
