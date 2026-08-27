@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from ingest.eastmoney import fetch_fund_stock_holdings
-from transform.holdings import aggregate_stocks
+from transform.holdings import aggregate_stocks, common_fund_codes, filter_to_funds
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = ROOT / "data" / "raw"
@@ -186,6 +186,40 @@ def run(
     _write_parquet(combined, RAW_DIR / "fund_holdings.parquet")
     _write_parquet(combined, PROCESSED_DIR / "fund_holdings.parquet")
 
+    aligned = common_fund_codes(combined)
+    print(
+        f"跨期对齐：{len(by_report)} 个报告期，可比基金 {len(aligned)} 只"
+        f"（仅保留各期均有持股的产品后再汇总）"
+    )
+
+    period_rows = []
+    stocks_by_quarter = {}
+    for report, raw in by_report.items():
+        aligned_raw = filter_to_funds(raw, aligned)
+        if aligned_raw.empty:
+            print(f"报告期 {report} 对齐后为空，跳过")
+            continue
+        meta, stocks = _period_stats(aligned_raw, report, [])
+        meta["raw_fund_count"] = int(raw["基金代码"].nunique())
+        meta["aligned_fund_count"] = int(len(aligned))
+        period_rows.append(meta)
+        stocks_by_quarter[report] = stocks
+        _write_parquet(stocks, PROCESSED_DIR / f"stocks_{report}.parquet")
+        stocks.to_json(
+            PROCESSED_DIR / f"stocks_{report}.json",
+            orient="records",
+            force_ascii=False,
+            indent=2,
+        )
+        print(
+            f"对齐后 {report}：可比基金 {meta['fund_count']} 只，全部持股 {meta['full_book_funds']}，"
+            f"前十大 {meta['top10_funds']}，股票 {meta['stock_count']} 只"
+            f"（原始 {meta['raw_fund_count']} 只）"
+        )
+
+    if not period_rows:
+        raise SystemExit("对齐后没有可用持仓")
+
     # Sort periods newest first
     def _sort_key(row: dict) -> tuple[int, int]:
         year_s, quarter_s = str(row["report_quarter"]).split("_")
@@ -206,6 +240,8 @@ def run(
     meta = {
         **default_meta,
         "default_quarter": default_quarter,
+        "aligned_fund_count": int(len(aligned)),
+        "aligned_fund_codes": sorted(aligned),
         "periods": period_rows,
         "pulled_at": datetime.now(timezone.utc).isoformat(),
     }

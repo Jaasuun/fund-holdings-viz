@@ -52,6 +52,9 @@ export type StocksResponse = {
   report_quarter: string | null;
   full_book_funds: number | null;
   top10_funds: number | null;
+  fund_count?: number | null;
+  aligned_fund_count?: number | null;
+  raw_fund_count?: number | null;
   available_quarters?: string[];
   stocks: Stock[];
 };

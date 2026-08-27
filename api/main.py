@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from api.auth_gate import BasicAuthMiddleware, login_status
 from ingest.market import fetch_index_daily
-from transform.holdings import aggregate_stocks
+from transform.holdings import aggregate_stocks, common_fund_codes, filter_to_funds
 from transform.tech import STAR50_SYMBOL, build_tech_gap
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,25 +90,45 @@ def _resolve_holdings_quarter(quarter: str | None) -> str:
     return _default_holdings_quarter(meta) or available[0]
 
 
-def _holdings_for_quarter(quarter: str) -> pd.DataFrame:
+def _aligned_fund_codes(meta: dict | None = None) -> set[str] | None:
+    """Return intersection codes when multi-period holdings exist; None means no filter."""
+    meta = meta or _holdings_meta()
+    stored = meta.get("aligned_fund_codes")
+    if isinstance(stored, list) and stored:
+        return {str(code).zfill(6) for code in stored}
+    if not HOLDINGS_PATH.exists():
+        return None
+    frame = pd.read_parquet(HOLDINGS_PATH)
+    if "报告期" not in frame.columns:
+        return None
+    periods = frame["报告期"].astype(str).unique().tolist()
+    if len(periods) <= 1:
+        return None
+    codes = common_fund_codes(frame)
+    return codes or None
+
+
+def _holdings_for_quarter(quarter: str, *, aligned: bool = True) -> pd.DataFrame:
     if not HOLDINGS_PATH.exists():
         raise HTTPException(status_code=404, detail="尚未生成持仓，请先运行 python -m ingest.holdings")
     frame = pd.read_parquet(HOLDINGS_PATH)
     if "报告期" not in frame.columns:
-        return frame
-    subset = frame[frame["报告期"].astype(str) == quarter]
+        subset = frame
+    else:
+        subset = frame[frame["报告期"].astype(str) == quarter]
     if subset.empty:
         raise HTTPException(status_code=404, detail=f"没有报告期 {quarter} 的持仓")
+    if aligned:
+        codes = _aligned_fund_codes()
+        if codes is not None:
+            subset = filter_to_funds(subset, codes)
+            if subset.empty:
+                raise HTTPException(status_code=404, detail=f"报告期 {quarter} 对齐后无持仓")
     return subset
 
 
 def _stocks_for_quarter(quarter: str) -> pd.DataFrame:
-    path = PROCESSED / f"stocks_{quarter}.parquet"
-    if path.exists():
-        return pd.read_parquet(path)
-    if quarter == _default_holdings_quarter() and STOCKS_PATH.exists():
-        return pd.read_parquet(STOCKS_PATH)
-    holdings = _holdings_for_quarter(quarter)
+    holdings = _holdings_for_quarter(quarter, aligned=True)
     return aggregate_stocks(holdings)
 
 
@@ -137,6 +157,7 @@ def holdings_periods() -> dict:
             periods.append(_period_meta(label, meta))
     return {
         "default_quarter": _default_holdings_quarter(meta),
+        "aligned_fund_count": meta.get("aligned_fund_count"),
         "periods": periods,
     }
 
@@ -147,12 +168,14 @@ def list_funds() -> dict:
         raise HTTPException(status_code=404, detail="尚未生成基金池，请先运行 python -m ingest.universe")
     frame = pd.read_parquet(UNIVERSE_PATH)
     meta = _load_json(META_PATH)
+    holdings_meta = _holdings_meta()
     return {
         "count": int(len(frame)),
         "report_quarter": meta.get("report_quarter"),
         "min_aum_yi": meta.get("min_aum_yi"),
         "holdings_quarters": _available_holdings_quarters(),
         "default_holdings_quarter": _default_holdings_quarter(),
+        "aligned_fund_count": holdings_meta.get("aligned_fund_count"),
         "funds": frame.to_dict(orient="records"),
     }
 
@@ -161,7 +184,13 @@ def list_funds() -> dict:
 def fund_holdings(code: str, quarter: str | None = Query(default=None)) -> dict:
     resolved = _resolve_holdings_quarter(quarter)
     code = str(code).zfill(6)
-    frame = _holdings_for_quarter(resolved)
+    aligned = _aligned_fund_codes()
+    if aligned is not None and code not in aligned:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{code} 不在一二季可比基金集合中（需两期均有持股）",
+        )
+    frame = _holdings_for_quarter(resolved, aligned=True)
     subset = frame[frame["基金代码"].astype(str).str.zfill(6) == code]
     if subset.empty:
         raise HTTPException(status_code=404, detail=f"没有 {code} 在 {resolved} 的持仓")
@@ -179,11 +208,15 @@ def list_stocks(quarter: str | None = Query(default=None)) -> dict:
     resolved = _resolve_holdings_quarter(quarter)
     frame = _stocks_for_quarter(resolved)
     period = _period_meta(resolved)
+    holdings_meta = _holdings_meta()
     return {
         "count": int(len(frame)),
         "report_quarter": resolved,
         "full_book_funds": period.get("full_book_funds"),
         "top10_funds": period.get("top10_funds"),
+        "fund_count": period.get("fund_count") or period.get("aligned_fund_count"),
+        "aligned_fund_count": holdings_meta.get("aligned_fund_count") or period.get("aligned_fund_count"),
+        "raw_fund_count": period.get("raw_fund_count"),
         "available_quarters": _available_holdings_quarters(),
         "stocks": frame.to_dict(orient="records"),
     }

@@ -5,6 +5,38 @@ from __future__ import annotations
 import pandas as pd
 
 
+def fund_codes(holdings: pd.DataFrame) -> set[str]:
+    if holdings.empty or "基金代码" not in holdings.columns:
+        return set()
+    return set(holdings["基金代码"].astype(str).str.zfill(6))
+
+
+def common_fund_codes(holdings: pd.DataFrame) -> set[str]:
+    """Funds that appear in every report period present in the frame.
+
+    Cross-quarter stock rankings are only meaningful on this intersection.
+    """
+    if holdings.empty or "基金代码" not in holdings.columns:
+        return set()
+    if "报告期" not in holdings.columns:
+        return fund_codes(holdings)
+    periods = [str(p) for p in holdings["报告期"].astype(str).unique().tolist()]
+    if len(periods) <= 1:
+        return fund_codes(holdings)
+    sets = [
+        fund_codes(holdings[holdings["报告期"].astype(str) == period])
+        for period in periods
+    ]
+    return set.intersection(*sets) if sets else set()
+
+
+def filter_to_funds(holdings: pd.DataFrame, codes: set[str]) -> pd.DataFrame:
+    if holdings.empty or not codes:
+        return holdings.iloc[0:0].copy()
+    mask = holdings["基金代码"].astype(str).str.zfill(6).isin(codes)
+    return holdings.loc[mask].copy()
+
+
 def aggregate_stocks(holdings: pd.DataFrame) -> pd.DataFrame:
     if holdings.empty:
         return holdings

@@ -686,16 +686,16 @@ export default function App() {
           )}
           <section className="kpis">
             <article className="card kpi">
+              <span>可比基金</span>
+              <strong>{stocks?.aligned_fund_count ?? stocks?.fund_count ?? "—"}</strong>
+            </article>
+            <article className="card kpi">
               <span>覆盖股票</span>
               <strong>{stocks?.count ?? "—"}</strong>
             </article>
             <article className="card kpi">
               <span>全部持股基金</span>
               <strong>{stocks?.full_book_funds ?? "—"}</strong>
-            </article>
-            <article className="card kpi">
-              <span>仅前十大基金</span>
-              <strong>{stocks?.top10_funds ?? "—"}</strong>
             </article>
             <article className="card kpi">
               <span>第一大重仓</span>
@@ -710,9 +710,12 @@ export default function App() {
               <section className="card panel">
                 <h2>持仓市值排行 · {formatQuarter(stocks.report_quarter)}</h2>
                 <p>
+                  一二季报对齐同一批可比基金（两期均有持股
+                  {stocks.aligned_fund_count ? `，共 ${stocks.aligned_fund_count} 只` : ""}
+                  ）后再汇总，切换报告期可直接对比。
                   {stocks.report_quarter?.endsWith("_1") || stocks.report_quarter?.endsWith("_3")
-                    ? "一/三季报仅披露前十大重仓，按前十大市值合计排行。"
-                    : "池内基金持有市值合计，前 12 名。有中报/年报的基金按全部持股计入，其余按前十大。"}
+                    ? " 一/三季报仅披露前十大。"
+                    : " 二/四季报有中报或年报的按全部持股计入，其余按前十大。"}
                 </p>
                 <div className="chart" style={{ height: 420 }}>
                   <ResponsiveContainer>
