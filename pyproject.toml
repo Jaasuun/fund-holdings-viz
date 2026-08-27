@@ -16,5 +16,8 @@ dependencies = [
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[project.scripts]
+fund-universe = "ingest.universe:main"
+
 [tool.setuptools.packages.find]
 include = ["ingest*", "transform*", "api*"]
