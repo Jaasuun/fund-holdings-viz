@@ -372,8 +372,13 @@ tbody tr:hover {
   color: #c2410c;
 }
 
-.chg.pos {
-  color: #15803d;
+.recharts-legend-item {
+  cursor: pointer;
+  user-select: none;
+}
+
+.recharts-legend-item-text {
+  color: inherit !important;
 }
 
 .chg.neg {

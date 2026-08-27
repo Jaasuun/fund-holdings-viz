@@ -53,6 +53,18 @@ function chgClass(value: number | null | undefined): string {
   return "chg";
 }
 
+const TECH_LINES = [
+  { key: "实际", color: "#2563eb" },
+  { key: "推算", color: "#0f766e" },
+  { key: "科创50", color: "#7c3aed" },
+  { key: "差距", color: "#b45309" },
+] as const;
+
+const RETURN_LINES = [
+  { key: "实际", color: "#2563eb" },
+  { key: "推算", color: "#0f766e" },
+] as const;
+
 export default function App() {
   const [data, setData] = useState<FundsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +87,16 @@ export default function App() {
   const [techError, setTechError] = useState<string | null>(null);
   const [techQuery, setTechQuery] = useState("");
   const [selectedTech, setSelectedTech] = useState<ReturnRow | null>(null);
+  const [techHidden, setTechHidden] = useState<Record<string, boolean>>({});
+  const [returnHidden, setReturnHidden] = useState<Record<string, boolean>>({});
+
+  const toggleTechLine = (key: string) => {
+    setTechHidden((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleReturnLine = (key: string) => {
+    setReturnHidden((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   useEffect(() => {
     fetchFunds()
@@ -336,7 +358,7 @@ export default function App() {
               <section className="card panel">
                 <h2>科技基金等权累计</h2>
                 <p>
-                  报告期末后，科技主题基金等权平均，并对照科创50。差距 = 实际累计 − 披露持仓推算累计。负值表示整体跑输季报持仓。
+                  报告期末后，科技主题基金等权平均，并对照科创50。差距 = 实际累计 − 披露持仓推算累计。点击图例可隐藏或显示对应曲线。
                 </p>
                 <div className="chart" style={{ height: 320 }}>
                   <ResponsiveContainer>
@@ -348,11 +370,25 @@ export default function App() {
                         formatter={(value) => [`${Number(value).toFixed(2)}%`, ""]}
                         contentStyle={TOOLTIP_STYLE}
                       />
-                      <Legend />
-                      <Line type="monotone" dataKey="实际" stroke="#2563eb" dot={false} strokeWidth={2} />
-                      <Line type="monotone" dataKey="推算" stroke="#0f766e" dot={false} strokeWidth={2} />
-                      <Line type="monotone" dataKey="科创50" stroke="#7c3aed" dot={false} strokeWidth={2} />
-                      <Line type="monotone" dataKey="差距" stroke="#b45309" dot={false} strokeWidth={2} />
+                      <Legend
+                        wrapperStyle={{ cursor: "pointer" }}
+                        onClick={(entry) => {
+                          const key = String(entry.dataKey ?? entry.value ?? "");
+                          if (key) toggleTechLine(key);
+                        }}
+                      />
+                      {TECH_LINES.map((line) => (
+                        <Line
+                          key={line.key}
+                          type="monotone"
+                          dataKey={line.key}
+                          stroke={line.color}
+                          dot={false}
+                          strokeWidth={2}
+                          hide={Boolean(techHidden[line.key])}
+                          connectNulls
+                        />
+                      ))}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -478,9 +514,25 @@ export default function App() {
                           formatter={(value) => [`${Number(value).toFixed(2)}%`, ""]}
                           contentStyle={TOOLTIP_STYLE}
                         />
-                        <Legend />
-                        <Line type="monotone" dataKey="实际" stroke="#2563eb" dot={false} strokeWidth={2} />
-                        <Line type="monotone" dataKey="推算" stroke="#0f766e" dot={false} strokeWidth={2} />
+                        <Legend
+                          wrapperStyle={{ cursor: "pointer" }}
+                          onClick={(entry) => {
+                            const key = String(entry.dataKey ?? entry.value ?? "");
+                            if (key) toggleReturnLine(key);
+                          }}
+                        />
+                        {RETURN_LINES.map((line) => (
+                          <Line
+                            key={line.key}
+                            type="monotone"
+                            dataKey={line.key}
+                            stroke={line.color}
+                            dot={false}
+                            strokeWidth={2}
+                            hide={Boolean(returnHidden[line.key])}
+                            connectNulls
+                          />
+                        ))}
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
