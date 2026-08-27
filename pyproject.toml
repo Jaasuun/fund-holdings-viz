@@ -1,0 +1,20 @@
+[project]
+name = "fund-holdings-viz"
+version = "0.1.0"
+description = "规模大于50亿公募基金的前十大持仓统计与可视化"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "akshare",
+    "pandas",
+    "pyarrow",
+    "fastapi",
+    "uvicorn[standard]",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ingest*", "transform*", "api*"]
