@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -71,7 +73,77 @@ def _asof(frame: pd.DataFrame) -> str | None:
     return latest.isoformat() if latest else None
 
 
-def run(*, force: bool = False) -> pd.DataFrame:
+def _workers(raw: int | None, env_name: str, default: int) -> int:
+    if raw is not None:
+        return max(1, raw)
+    text = (os.getenv(env_name) or "").strip()
+    if text.isdigit():
+        return max(1, int(text))
+    return default
+
+
+def _tried_recently(path: Path, end: date) -> bool:
+    if not path.exists():
+        return False
+    checked = datetime.fromtimestamp(path.stat().st_mtime).date()
+    return _is_fresh(checked, end)
+
+
+def _empty_price() -> pd.DataFrame:
+    return pd.DataFrame(columns=["日期", "收盘", "股票代码"])
+
+
+def _fetch_price_job(
+    code: str, price_start: date, end: date, force: bool
+) -> tuple[str, str, pd.DataFrame | None, str | None]:
+    cache = PRICE_DIR / f"{code}.parquet"
+    cached = _load_cached(cache)
+    latest = _latest_date(cached)
+    if not force and _is_fresh(latest, end):
+        return "cached", code, cached if cached is not None else _empty_price(), None
+    if not force and (cached is None or cached.empty) and _tried_recently(cache, end):
+        return "skip", code, None, None
+    fetch_start = price_start
+    if latest is not None and not force:
+        fetch_start = max(price_start, latest - timedelta(days=5))
+    try:
+        frame = fetch_a_share_daily(code, fetch_start, end)
+        merged = _merge_daily(cached, frame, ["日期", "股票代码"])
+        if merged.empty:
+            _write_parquet(_empty_price(), cache)
+            return "empty", code, None, None
+        _write_parquet(merged, cache)
+        return "ok", code, merged, None
+    except Exception as exc:  # noqa: BLE001
+        if cached is not None and not cached.empty:
+            return "fail_cache", code, cached, str(exc)
+        return "fail", code, None, str(exc)
+
+
+def _fetch_nav_job(
+    code: str, label: str, start: date, end: date, force: bool
+) -> tuple[str, str, str, pd.DataFrame | None, str | None]:
+    cache = NAV_DIR / f"{code}.parquet"
+    cached = _load_cached(cache)
+    latest = _latest_date(cached)
+    if not force and _is_fresh(latest, end) and cached is not None and not cached.empty:
+        return "cached", code, label, cached, None
+    if not force and (cached is None or cached.empty) and _tried_recently(cache, end):
+        return "skip", code, label, None, None
+    try:
+        frame = fetch_fund_nav(code, start)
+        merged = _merge_daily(cached, frame, ["基金代码", "日期"])
+        if merged.empty:
+            return "empty", code, label, None, None
+        _write_parquet(merged, cache)
+        return "ok", code, label, merged, None
+    except Exception as exc:  # noqa: BLE001
+        if cached is not None and not cached.empty:
+            return "fail_cache", code, label, cached, str(exc)
+        return "fail", code, label, None, str(exc)
+
+
+def run(*, force: bool = False, workers: int | None = None) -> pd.DataFrame:
     if not HOLDINGS_PATH.exists() or not UNIVERSE_PATH.exists():
         raise SystemExit("请先运行 python -m ingest.universe 与 python -m ingest.holdings")
 
@@ -81,43 +153,41 @@ def run(*, force: bool = False) -> pd.DataFrame:
     start = report_end(quarter)
     price_start = start - timedelta(days=10)
     end = date.today()
-    print(f"报告期末 {start} 起计算日涨幅，行情截至 {end}{'（强制重拉）' if force else ''}")
+    price_workers = _workers(workers, "FUND_PRICE_WORKERS", 16)
+    nav_workers = _workers(workers, "FUND_NAV_WORKERS", 8)
+    print(
+        f"报告期末 {start} 起计算日涨幅，行情截至 {end}"
+        f"{'（强制重拉）' if force else ''}，行情并发 {price_workers}，净值并发 {nav_workers}"
+    )
 
     codes = sorted({str(code) for code in holdings["股票代码"] if is_a_share(str(code))})
     price_parts: list[pd.DataFrame] = []
     price_fail = 0
     price_refresh = 0
-    for n, code in enumerate(codes, start=1):
-        cache = PRICE_DIR / f"{code}.parquet"
-        cached = _load_cached(cache)
-        latest = _latest_date(cached)
-        if not force and _is_fresh(latest, end):
-            if cached is not None and not cached.empty:
-                price_parts.append(cached)
-            continue
-        fetch_start = price_start
-        if latest is not None and not force:
-            fetch_start = max(price_start, latest - timedelta(days=5))
-        try:
-            frame = fetch_a_share_daily(code, fetch_start, end, retries=3)
-            merged = _merge_daily(cached, frame, ["日期", "股票代码"])
-            if merged.empty:
+    done = 0
+    with ThreadPoolExecutor(max_workers=price_workers) as pool:
+        futures = [
+            pool.submit(_fetch_price_job, code, price_start, end, force) for code in codes
+        ]
+        for future in as_completed(futures):
+            status, code, frame, error = future.result()
+            done += 1
+            if status == "ok":
+                price_refresh += 1
+                price_parts.append(frame)
+            elif status in {"cached", "fail_cache"} and frame is not None and not frame.empty:
+                if status == "fail_cache":
+                    price_fail += 1
+                    print(f"[{done}/{len(codes)}] {code} 行情失败，沿用缓存：{error}")
+                price_parts.append(frame)
+            elif status in {"empty", "fail"}:
                 price_fail += 1
-                print(f"[{n}/{len(codes)}] {code} 无行情")
-                continue
-            _write_parquet(merged, cache)
-            price_parts.append(merged)
-            price_refresh += 1
-            if n % 25 == 0 or n == len(codes):
-                print(f"[{n}/{len(codes)}] A股行情已更新 {price_refresh} 只")
-        except Exception as exc:  # noqa: BLE001
-            price_fail += 1
-            if cached is not None and not cached.empty:
-                price_parts.append(cached)
-                print(f"[{n}/{len(codes)}] {code} 行情失败，沿用缓存：{exc}")
-            else:
-                _write_parquet(pd.DataFrame(columns=["日期", "收盘", "股票代码"]), cache)
-                print(f"[{n}/{len(codes)}] {code} 行情失败：{exc}")
+                if status == "empty":
+                    print(f"[{done}/{len(codes)}] {code} 无行情")
+                else:
+                    print(f"[{done}/{len(codes)}] {code} 行情失败：{error}")
+            if done % 50 == 0 or done == len(codes):
+                print(f"[{done}/{len(codes)}] A股行情已处理，新拉 {price_refresh} 只")
 
     prices = pd.concat(price_parts, ignore_index=True) if price_parts else pd.DataFrame()
     implied = implied_daily_returns(holdings, prices)
@@ -126,33 +196,34 @@ def run(*, force: bool = False) -> pd.DataFrame:
     nav_fail = 0
     nav_refresh = 0
     fund_codes = universe["代表代码"].astype(str).str.zfill(6).tolist()
-    for n, code in enumerate(fund_codes, start=1):
-        cache = NAV_DIR / f"{code}.parquet"
-        cached = _load_cached(cache)
-        name = universe.loc[universe["代表代码"].astype(str).str.zfill(6) == code, "代表简称"]
-        label = name.iloc[0] if not name.empty else code
-        latest = _latest_date(cached)
-        if not force and _is_fresh(latest, end) and cached is not None and not cached.empty:
-            nav_parts.append(cached)
-            continue
-        try:
-            frame = fetch_fund_nav(code, start, retries=3)
-            merged = _merge_daily(cached, frame, ["基金代码", "日期"])
-            if merged.empty:
+    name_map = {
+        str(code).zfill(6): name
+        for code, name in zip(
+            universe["代表代码"].astype(str), universe["代表简称"].astype(str), strict=False
+        )
+    }
+    done = 0
+    with ThreadPoolExecutor(max_workers=nav_workers) as pool:
+        futures = [
+            pool.submit(_fetch_nav_job, code, name_map.get(code, code), start, end, force)
+            for code in fund_codes
+        ]
+        for future in as_completed(futures):
+            status, code, label, frame, error = future.result()
+            done += 1
+            if status == "ok":
+                nav_refresh += 1
+                nav_parts.append(frame)
+                print(f"净值 [{done}/{len(fund_codes)}] {code} {label} {len(frame)} 天")
+            elif status in {"cached", "fail_cache"} and frame is not None and not frame.empty:
+                if status == "fail_cache":
+                    nav_fail += 1
+                    print(f"净值 [{done}/{len(fund_codes)}] {code} {label} 失败，沿用缓存：{error}")
+                nav_parts.append(frame)
+            elif status in {"empty", "fail"}:
                 nav_fail += 1
-                print(f"净值 [{n}/{len(fund_codes)}] {code} {label} 无数据")
-                continue
-            _write_parquet(merged, cache)
-            nav_parts.append(merged)
-            nav_refresh += 1
-            print(f"净值 [{n}/{len(fund_codes)}] {code} {label} {len(merged)} 天")
-        except Exception as exc:  # noqa: BLE001
-            nav_fail += 1
-            if cached is not None and not cached.empty:
-                nav_parts.append(cached)
-                print(f"净值 [{n}/{len(fund_codes)}] {code} {label} 失败，沿用缓存：{exc}")
-            else:
-                print(f"净值 [{n}/{len(fund_codes)}] {code} {label} 失败：{exc}")
+                reason = "无数据" if status == "empty" else f"失败：{error}"
+                print(f"净值 [{done}/{len(fund_codes)}] {code} {label} {reason}")
 
     nav = pd.concat(nav_parts, ignore_index=True) if nav_parts else pd.DataFrame()
     daily = merge_returns(nav, implied, start)
@@ -192,8 +263,9 @@ def run(*, force: bool = False) -> pd.DataFrame:
 def main() -> None:
     parser = argparse.ArgumentParser(description="按披露持仓冻结推算日涨幅，并对照基金实际净值")
     parser.add_argument("--force", action="store_true", help="忽略缓存新鲜度，全量重拉")
+    parser.add_argument("--workers", type=int, default=None, help="行情/净值并发数，默认行情 16、净值 8")
     args = parser.parse_args()
-    run(force=args.force)
+    run(force=args.force, workers=args.workers)
 
 
 if __name__ == "__main__":

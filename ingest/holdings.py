@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,35 +48,63 @@ def _period_stats(raw: pd.DataFrame, report: str, failures: list[dict]) -> tuple
     return meta, stocks
 
 
-def _pull_quarter(universe: pd.DataFrame, report: str) -> tuple[pd.DataFrame, list[dict]]:
+def _workers(raw: int | None, default: int = 8) -> int:
+    if raw is not None:
+        return max(1, raw)
+    text = (os.getenv("FUND_HOLDINGS_WORKERS") or "").strip()
+    if text.isdigit():
+        return max(1, int(text))
+    return default
+
+
+def _fetch_one_holding(row: pd.Series, year: int, quarter: int) -> tuple[str, str, pd.DataFrame | None, str | None]:
+    code = str(row["代表代码"]).zfill(6)
+    name = str(row["代表简称"])
+    try:
+        holdings = fetch_fund_stock_holdings(code, year, quarter, pause_s=0)
+    except Exception as exc:  # noqa: BLE001
+        return code, name, None, str(exc)
+    if holdings.empty:
+        return code, name, None, "无持仓表"
+    holdings["产品名称"] = row["产品名称"]
+    holdings["代表简称"] = name
+    return code, name, holdings, None
+
+
+def _pull_quarter(
+    universe: pd.DataFrame, report: str, *, workers: int = 8
+) -> tuple[pd.DataFrame, list[dict]]:
     year_s, quarter_s = report.split("_")
     year, quarter = int(year_s), int(quarter_s)
-    print(f"报告期 {report}：优先全部持股，没有则前十大。共 {len(universe)} 只产品。")
+    print(
+        f"报告期 {report}：优先全部持股，没有则前十大。共 {len(universe)} 只产品，并发 {workers}。"
+    )
 
     parts: list[pd.DataFrame] = []
     failures: list[dict] = []
-    for n, (_, row) in enumerate(universe.iterrows(), start=1):
-        code = str(row["代表代码"]).zfill(6)
-        name = row["代表简称"]
-        try:
-            holdings = fetch_fund_stock_holdings(code, year, quarter)
-        except Exception as exc:  # noqa: BLE001
-            failures.append(
-                {"基金代码": code, "基金简称": name, "报告期": report, "error": str(exc)}
-            )
-            print(f"[{n}/{len(universe)}] {code} {name} 失败：{exc}")
-            continue
-        if holdings.empty:
-            failures.append(
-                {"基金代码": code, "基金简称": name, "报告期": report, "error": "无持仓表"}
-            )
-            print(f"[{n}/{len(universe)}] {code} {name} 无持仓")
-            continue
-        holdings["产品名称"] = row["产品名称"]
-        holdings["代表简称"] = name
-        parts.append(holdings)
-        source = holdings["披露口径"].iloc[0]
-        print(f"[{n}/{len(universe)}] {code} {name} {source} {len(holdings)} 只股票")
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [
+            pool.submit(_fetch_one_holding, row, year, quarter)
+            for _, row in universe.iterrows()
+        ]
+        for future in as_completed(futures):
+            code, name, holdings, error = future.result()
+            done += 1
+            if error or holdings is None or holdings.empty:
+                failures.append(
+                    {
+                        "基金代码": code,
+                        "基金简称": name,
+                        "报告期": report,
+                        "error": error or "无持仓表",
+                    }
+                )
+                print(f"[{done}/{len(universe)}] {code} {name} {error or '无持仓'}")
+                continue
+            parts.append(holdings)
+            source = holdings["披露口径"].iloc[0]
+            print(f"[{done}/{len(universe)}] {code} {name} {source} {len(holdings)} 只股票")
 
     if not parts:
         return pd.DataFrame(), failures
@@ -93,6 +123,7 @@ def run(
     *,
     also_previous: bool = True,
     force: bool = False,
+    workers: int | None = None,
 ) -> pd.DataFrame:
     if not UNIVERSE_PATH.exists():
         raise SystemExit("尚未生成基金池，请先运行 python -m ingest.universe")
@@ -141,7 +172,7 @@ def run(
             )
             continue
 
-        raw, failures = _pull_quarter(universe, report)
+        raw, failures = _pull_quarter(universe, report, workers=_workers(workers))
         all_failures.extend(failures)
         if raw.empty:
             print(f"报告期 {report} 没有拉到任何持仓，跳过")
@@ -281,9 +312,10 @@ def main() -> None:
         action="store_true",
         help="忽略已有缓存，强制重拉指定报告期",
     )
+    parser.add_argument("--workers", type=int, default=None, help="持仓拉取并发数，默认 8")
     args = parser.parse_args()
     quarters = [part.strip() for part in args.quarters.split(",") if part.strip()] or None
-    run(quarters, also_previous=not args.no_previous, force=args.force)
+    run(quarters, also_previous=not args.no_previous, force=args.force, workers=args.workers)
 
 
 if __name__ == "__main__":
