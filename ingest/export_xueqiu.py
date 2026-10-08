@@ -79,6 +79,18 @@ def run(out: Path) -> dict:
         "snapshot_date": payload.get("snapshot_date") or meta.get("asof"),
     }
     _write_json(out / "returns_meta.json", meta)
+
+    estimate_src = PROCESSED_DIR / "equity_aum_estimate.json"
+    if estimate_src.is_file():
+        estimate = json.loads(estimate_src.read_text(encoding="utf-8"))
+        _write_json(out / "equity_aum_estimate.json", estimate)
+        print(
+            f"已导出估算规模：asof {estimate.get('asof')}，"
+            f"估算 {((estimate.get('latest') or {}).get('aum_yi_est'))} 亿"
+        )
+    else:
+        print("未找到 equity_aum_estimate.json，跳过估算规模导出（先跑 python -m ingest.aum_estimate）")
+
     print(
         f"已导出到 {out}：日涨幅 {meta.get('day_count')} 日，"
         f"截至 {meta.get('asof') or tech.get('snapshot_date')}"
