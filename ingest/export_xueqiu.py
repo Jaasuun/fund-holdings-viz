@@ -80,16 +80,17 @@ def run(out: Path) -> dict:
     }
     _write_json(out / "returns_meta.json", meta)
 
-    estimate_src = PROCESSED_DIR / "equity_aum_estimate.json"
-    if estimate_src.is_file():
-        estimate = json.loads(estimate_src.read_text(encoding="utf-8"))
-        _write_json(out / "equity_aum_estimate.json", estimate)
+    amac_src = PROCESSED_DIR / "amac_monthly_scale.json"
+    if amac_src.is_file():
+        amac = json.loads(amac_src.read_text(encoding="utf-8"))
+        _write_json(out / "amac_monthly_scale.json", amac)
         print(
-            f"已导出估算规模：asof {estimate.get('asof')}，"
-            f"估算 {((estimate.get('latest') or {}).get('aum_yi_est'))} 亿"
+            f"已导出中基协月报：asof {amac.get('asof')}，"
+            f"{len(amac.get('path') or [])} 期，"
+            f"净值 {((amac.get('latest') or {}).get('nav_yi'))} 亿"
         )
     else:
-        print("未找到 equity_aum_estimate.json，跳过估算规模导出（先跑 python -m ingest.aum_estimate）")
+        print("未找到 amac_monthly_scale.json，跳过协会月报导出（先跑 python -m ingest.amac_monthly）")
 
     print(
         f"已导出到 {out}：日涨幅 {meta.get('day_count')} 日，"
