@@ -24,11 +24,36 @@ RAW_DIR = ROOT / "data" / "raw"
 PROCESSED_DIR = ROOT / "data" / "processed"
 RANK_CACHE_DIR = RAW_DIR / "aum_rank_custom"
 NOTE = (
-    "估算规模 = 季报净资产 × 最新净值/报告期末净值（东财开放式排行自定义区间涨跌）；"
+    "估算规模 = 季报净资产 × 最新已披露净值/报告期末净值（东财开放式排行自定义区间涨跌）；"
     "不含报告期后申赎；已剔除场内 ETF（保留联接基金）。"
-    "同一产品多份额按代表份额涨跌套用产品合计规模；"
-    "代表份额当日无净值时按季报规模冻结（涨跌记 0）。"
+    "同一产品多份额按代表份额涨跌套用产品合计规模。"
+    "净值披露节奏不同：封闭式、开放式（开放申赎前）至少每周一次；"
+    "开放式（开放申赎后）不晚于每个开放日的次日披露该开放日净值。"
+    "周更/定开封闭期等非披露日沿用最近一次净值；排行无数据时按季报底座冻结。"
 )
+
+# 《公开募集证券投资基金信息披露管理办法》第十四条
+NAV_DISCLOSURE = {
+    "regulation": "公开募集证券投资基金信息披露管理办法第十四条",
+    "rules": [
+        {
+            "kind": "closed_or_pre_open",
+            "label": "封闭式基金；开放式基金（开放申赎前）",
+            "cadence": "至少每周披露一次基金资产净值/份额净值",
+        },
+        {
+            "kind": "open_end",
+            "label": "开放式基金（开放申赎后）",
+            "cadence": "不晚于每个开放日的次日，披露该开放日的基金份额净值",
+        },
+    ],
+    "monitor_note": (
+        "本监控按已披露最新净值估算，不是盘中实时规模；"
+        "asof 为覆盖产品中最晚净值日。"
+        "交易日 22:30 刷新，对齐开放式「开放日次日」披露节奏；"
+        "周更产品在非披露日不会更新。"
+    ),
+}
 
 _RANK_URL = "https://fund.eastmoney.com/data/rankhandler.aspx"
 _RANK_HEADERS = {
@@ -326,6 +351,7 @@ def run(
         "asof": latest_detail.get("nav_date") or path[-1]["date"],
         "equity_types": TYPE_ORDER,
         "note": NOTE,
+        "nav_disclosure": NAV_DISCLOSURE,
         "coverage": {
             "product_count": latest_detail["product_count"],
             "with_nav": latest_detail["with_nav"],
